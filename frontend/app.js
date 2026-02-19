@@ -122,12 +122,47 @@ class AlchemistApp {
                 formData.append('session_id', this.currentSession);
             }
 
+            console.log('Starting file upload:', file.name, 'Size:', file.size, 'bytes');
+
+            // Add timeout handling
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
+
             const response = await fetch(`${this.apiBase}/upload`, {
                 method: 'POST',
-                body: formData
+                body: formData,
+                signal: controller.signal
             });
 
-            const result = await response.json();
+            clearTimeout(timeoutId);
+            console.log('Upload response received:', response.status, response.statusText);
+
+            // Handle response - read as text first, then parse JSON if possible
+            let result;
+            const contentType = response.headers.get('content-type') || '';
+            const responseText = await response.text();
+            
+            if (contentType.includes('application/json')) {
+                try {
+                    result = JSON.parse(responseText);
+                } catch (jsonError) {
+                    console.error('JSON parse error:', jsonError);
+                    console.error('Response text:', responseText);
+                    throw new Error(`Invalid JSON response: ${responseText.substring(0, 200)}`);
+                }
+            } else {
+                // Not JSON response - use text as error message
+                console.error('Non-JSON response:', responseText);
+                throw new Error(`Server error (${response.status}): ${responseText.substring(0, 200)}`);
+            }
+
+            // Log the result for debugging
+            if (!result.success) {
+                console.error('Upload failed:', result);
+                if (result.traceback) {
+                    console.error('Server traceback:', result.traceback);
+                }
+            }
 
             if (result.success) {
                 this.currentData = result.data_info.data;
@@ -141,7 +176,18 @@ class AlchemistApp {
                 throw new Error(result.error || 'Upload failed');
             }
         } catch (error) {
-            this.showNotification(`Upload failed: ${error.message}`, 'error');
+            console.error('Upload error:', error);
+            let errorMessage = error.message || 'Upload failed';
+            
+            // Handle timeout
+            if (error.name === 'AbortError') {
+                errorMessage = 'Upload timeout - file may be too large or server is not responding';
+            } else if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+                errorMessage = 'Failed to connect to server. Please check if the server is running.';
+            }
+            
+            // Error message should already contain the server error if it was a response error
+            this.showNotification(`Upload failed: ${errorMessage}`, 'error');
             uploadProgress.classList.add('hidden');
             uploadArea.classList.remove('hidden');
         } finally {
@@ -973,6 +1019,7 @@ class AlchemistApp {
     }
 
     showDownloadModal() {
+        console.log('showDownloadModal() called');
         const modalBody = document.getElementById('modalBody');
         modalBody.innerHTML = `
             <div class="form-group">
@@ -987,50 +1034,189 @@ class AlchemistApp {
                 <label for="downloadFilename">Filename (optional):</label>
                 <input type="text" id="downloadFilename" class="form-control" placeholder="cleaned_data">
             </div>
+            <div id="downloadProgress" class="upload-progress hidden" style="margin-top: 15px;">
+                <div class="progress-bar">
+                    <div id="downloadProgressFill" class="progress-fill" style="width: 0%;"></div>
+                </div>
+                <p id="downloadProgressText">Preparing download...</p>
+            </div>
         `;
 
-        this.showModal('Download Data', () => this.downloadData());
+        // Use arrow function to preserve 'this' context and ensure async handling
+        const downloadCallback = async () => {
+            console.log('Download modal confirm callback triggered');
+            await this.downloadData();
+        };
+        
+        this.showModal('Download Data', downloadCallback, 'Download');
     }
 
     async downloadData() {
+        console.log('downloadData() called');
         try {
-            const format = document.getElementById('downloadFormat').value;
-            const filename = document.getElementById('downloadFilename').value;
-
-            this.showLoading(true);
-
-            const response = await fetch(`${this.apiBase}/download`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    format: format,
-                    filename: filename
-                })
-            });
-
-            if (response.ok) {
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = filename || `cleaned_data.${format}`;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
-                
-                this.showNotification('Download started successfully', 'success');
-                this.closeModal();
-            } else {
-                const error = await response.json();
-                throw new Error(error.error);
+            const formatSelect = document.getElementById('downloadFormat');
+            const filenameInput = document.getElementById('downloadFilename');
+            
+            if (!formatSelect) {
+                throw new Error('Format select element not found');
             }
+            if (!filenameInput) {
+                throw new Error('Filename input element not found');
+            }
+            
+            const format = formatSelect.value;
+            let filename = filenameInput.value.trim();
+            
+            console.log('Download parameters:', { format, filename });
+
+            // Add file extension if not provided
+            if (filename && !filename.match(/\.(csv|xlsx|json)$/i)) {
+                const extensions = {
+                    'csv': '.csv',
+                    'excel': '.xlsx',
+                    'json': '.json'
+                };
+                filename = filename + extensions[format];
+            } else if (!filename) {
+                filename = `cleaned_data.${format === 'excel' ? 'xlsx' : format}`;
+            }
+
+            // Show progress bar
+            const downloadProgress = document.getElementById('downloadProgress');
+            const downloadProgressFill = document.getElementById('downloadProgressFill');
+            const downloadProgressText = document.getElementById('downloadProgressText');
+            
+            if (downloadProgress) {
+                downloadProgress.classList.remove('hidden');
+            }
+            
+            this.updateDownloadProgress(0, 'Preparing download...');
+
+            // Use XMLHttpRequest for progress tracking
+            return new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', `${this.apiBase}/download`, true);
+                xhr.setRequestHeader('Content-Type', 'application/json');
+                xhr.responseType = 'blob';
+
+                // Track download progress
+                xhr.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const percentComplete = (e.loaded / e.total) * 100;
+                        this.updateDownloadProgress(percentComplete, `Downloading... ${Math.round(percentComplete)}%`);
+                    } else {
+                        // If total size is unknown, show indeterminate progress
+                        this.updateDownloadProgress(50, 'Downloading...');
+                    }
+                });
+
+                xhr.addEventListener('load', () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        const blob = xhr.response;
+                        console.log('Blob created:', blob.size, 'bytes, type:', blob.type);
+                        
+                        if (blob.size === 0) {
+                            this.updateDownloadProgress(0, 'Download failed: File is empty');
+                            reject(new Error('Downloaded file is empty'));
+                            return;
+                        }
+                        
+                        this.updateDownloadProgress(100, 'Download complete!');
+                        
+                        // Create download link
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filename;
+                        a.style.display = 'none';
+                        document.body.appendChild(a);
+                        a.click();
+                        
+                        // Clean up after a short delay
+                        setTimeout(() => {
+                            window.URL.revokeObjectURL(url);
+                            document.body.removeChild(a);
+                            if (downloadProgress) {
+                                downloadProgress.classList.add('hidden');
+                            }
+                        }, 500);
+                        
+                        this.showNotification('Download completed successfully', 'success');
+                        this.closeModal();
+                        resolve();
+                    } else {
+                        // Handle error response
+                        const contentType = xhr.getResponseHeader('content-type') || '';
+                        let errorMessage = 'Download failed';
+                        
+                        if (contentType.includes('application/json')) {
+                            try {
+                                const errorBlob = xhr.response;
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                    try {
+                                        const error = JSON.parse(reader.result);
+                                        errorMessage = error.error || errorMessage;
+                                    } catch (e) {
+                                        errorMessage = 'Failed to parse error response';
+                                    }
+                                    this.updateDownloadProgress(0, `Error: ${errorMessage}`);
+                                    reject(new Error(errorMessage));
+                                };
+                                reader.onerror = () => {
+                                    this.updateDownloadProgress(0, `Error: ${errorMessage}`);
+                                    reject(new Error(errorMessage));
+                                };
+                                reader.readAsText(errorBlob);
+                            } catch (e) {
+                                this.updateDownloadProgress(0, `Error: ${errorMessage}`);
+                                reject(new Error(errorMessage));
+                            }
+                        } else {
+                            this.updateDownloadProgress(0, `Error: ${errorMessage} (${xhr.status})`);
+                            reject(new Error(`${errorMessage} (${xhr.status})`));
+                        }
+                    }
+                });
+
+                xhr.addEventListener('error', () => {
+                    this.updateDownloadProgress(0, 'Network error occurred');
+                    reject(new Error('Network error occurred'));
+                });
+
+                xhr.addEventListener('abort', () => {
+                    this.updateDownloadProgress(0, 'Download cancelled');
+                    reject(new Error('Download cancelled'));
+                });
+
+                // Send request
+                xhr.send(JSON.stringify({
+                    format: format,
+                    filename: filename.replace(/\.[^.]+$/, '') // Remove extension, backend will add it
+                }));
+            });
         } catch (error) {
+            console.error('Download error:', error);
             this.showNotification(`Download failed: ${error.message}`, 'error');
+            const downloadProgress = document.getElementById('downloadProgress');
+            if (downloadProgress) {
+                downloadProgress.classList.add('hidden');
+            }
         } finally {
             this.showLoading(false);
+        }
+    }
+
+    updateDownloadProgress(percent, text) {
+        const downloadProgressFill = document.getElementById('downloadProgressFill');
+        const downloadProgressText = document.getElementById('downloadProgressText');
+        
+        if (downloadProgressFill) {
+            downloadProgressFill.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+        }
+        
+        if (downloadProgressText) {
+            downloadProgressText.textContent = text || `Downloading... ${Math.round(percent)}%`;
         }
     }
 
@@ -1065,9 +1251,44 @@ class AlchemistApp {
         });
     }
 
-    showModal(title, onConfirm) {
+    showModal(title, onConfirm, confirmText = 'Confirm') {
         document.getElementById('modalTitle').textContent = title;
         document.getElementById('modalOverlay').classList.remove('hidden');
+        
+        // Create footer buttons
+        const modalFooter = document.getElementById('modalFooter');
+        modalFooter.innerHTML = `
+            <button id="modalCancelBtn" class="btn btn-secondary">Cancel</button>
+            <button id="modalConfirmBtn" class="btn btn-primary">${confirmText}</button>
+        `;
+        
+        // Remove any existing listeners by cloning and replacing
+        const cancelBtn = document.getElementById('modalCancelBtn');
+        const confirmBtn = document.getElementById('modalConfirmBtn');
+        
+        // Add event listeners with proper handling
+        cancelBtn.addEventListener('click', () => {
+            console.log('Cancel button clicked');
+            this.closeModal();
+        });
+        
+        confirmBtn.addEventListener('click', async () => {
+            console.log('Confirm/Download button clicked');
+            if (onConfirm) {
+                try {
+                    // Handle async functions properly
+                    const result = onConfirm();
+                    if (result instanceof Promise) {
+                        await result;
+                    }
+                } catch (error) {
+                    console.error('Error in modal confirm callback:', error);
+                    this.showNotification(`Error: ${error.message}`, 'error');
+                }
+            } else {
+                console.warn('No confirm callback provided');
+            }
+        });
         
         // Store confirm callback
         this.modalConfirmCallback = onConfirm;
@@ -1075,6 +1296,9 @@ class AlchemistApp {
 
     closeModal() {
         document.getElementById('modalOverlay').classList.add('hidden');
+        // Clear modal body and footer
+        document.getElementById('modalBody').innerHTML = '';
+        document.getElementById('modalFooter').innerHTML = '';
         this.modalConfirmCallback = null;
     }
 

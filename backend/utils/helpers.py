@@ -10,9 +10,32 @@ import uuid
 import hashlib
 import json
 import pandas as pd
+import numpy as np
 from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 import mimetypes
+
+
+def replace_nan_with_none(obj: Any) -> Any:
+    """
+    Recursively replace NaN values with None for JSON serialization
+    
+    Args:
+        obj: Object that may contain NaN values
+        
+    Returns:
+        Object with NaN replaced by None
+    """
+    if isinstance(obj, dict):
+        return {k: replace_nan_with_none(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [replace_nan_with_none(item) for item in obj]
+    elif isinstance(obj, (float, np.floating)) and (pd.isna(obj) or np.isnan(obj)):
+        return None
+    elif isinstance(obj, (int, np.integer)) and pd.isna(obj):
+        return None
+    else:
+        return obj
 
 
 def generate_unique_id() -> str:
@@ -74,7 +97,7 @@ def get_file_type(file_content: bytes, filename: str) -> str:
         # Try JSON first
         json.loads(file_content.decode('utf-8'))
         return 'json'
-    except:
+    except (json.JSONDecodeError, UnicodeDecodeError):
         pass
     
     # Try CSV by checking for commas and newlines
@@ -125,15 +148,27 @@ def validate_dataframe_structure(df: pd.DataFrame) -> Dict[str, Any]:
         Dict containing validation results
     """
     try:
+        # Check if DataFrame is None
+        if df is None:
+            return {
+                'valid': False,
+                'errors': ['DataFrame is None'],
+                'warnings': [],
+                'info': {}
+            }
+        
+        # Convert dtypes to string for JSON serialization
+        dtypes_dict = {str(k): str(v) for k, v in df.dtypes.to_dict().items()}
+        
         validation_results = {
             'valid': True,
             'errors': [],
             'warnings': [],
             'info': {
-                'shape': df.shape,
+                'shape': list(df.shape),  # Convert tuple to list for JSON
                 'columns': list(df.columns),
-                'dtypes': df.dtypes.to_dict(),
-                'memory_usage_mb': df.memory_usage(deep=True).sum() / (1024 * 1024)
+                'dtypes': dtypes_dict,
+                'memory_usage_mb': float(df.memory_usage(deep=True).sum() / (1024 * 1024))
             }
         }
         
@@ -182,6 +217,9 @@ def sanitize_column_names(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame with sanitized column names
     """
+    if df is None:
+        return None
+    
     df_copy = df.copy()
     
     # Create a mapping of old to new column names
@@ -236,6 +274,13 @@ def create_data_preview(df: pd.DataFrame, max_rows: int = 100) -> Dict[str, Any]
         Dict containing preview data
     """
     try:
+        # Check if DataFrame is None
+        if df is None:
+            return {
+                'success': False,
+                'error': 'DataFrame is None'
+            }
+        
         # Limit rows for preview
         preview_df = df.head(max_rows)
         
@@ -251,13 +296,16 @@ def create_data_preview(df: pd.DataFrame, max_rows: int = 100) -> Dict[str, Any]
                 'sample_values': col_data.dropna().head(5).tolist() if not col_data.isnull().all() else []
             }
         
+        # Convert DataFrame to dict and replace NaN with None for JSON serialization
+        preview_dict = preview_df.to_dict('records')
+        
         return {
             'success': True,
-            'data': preview_df.to_dict('records'),
+            'data': replace_nan_with_none(preview_dict),
             'columns': list(df.columns),
-            'shape': df.shape,
+            'shape': list(df.shape),  # Convert tuple to list for JSON
             'preview_rows': len(preview_df),
-            'column_info': column_info
+            'column_info': replace_nan_with_none(column_info)
         }
         
     except Exception as e:

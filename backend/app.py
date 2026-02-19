@@ -10,6 +10,7 @@ from flask_cors import CORS
 import os
 import sys
 import json
+import io
 from datetime import datetime
 import traceback
 
@@ -69,6 +70,16 @@ def upload_file():
     - session_id: Optional session identifier
     """
     try:
+        # Reset all handler states at the start of each upload
+        try:
+            data_handler.data = None
+            data_handler.original_data = None
+            visualizer.set_data(None)
+            stats_calculator.set_data(None)
+        except Exception as reset_error:
+            # Log but don't fail on reset errors
+            print(f"Warning: Error resetting state: {reset_error}")
+        
         if 'file' not in request.files:
             return jsonify({'success': False, 'error': 'No file provided'}), 400
         
@@ -93,27 +104,74 @@ def upload_file():
             return jsonify({'success': False, 'error': size_validation['message']}), 400
         
         # Load data
+        print(f"Loading data: file_type={file_type}, size={len(file_content)} bytes")
         load_result = data_handler.load_data(file_content, file_type)
+        print(f"Data loaded: success={load_result.get('success', False)}")
         
         if not load_result['success']:
+            # Reset state on load failure
+            data_handler.data = None
+            data_handler.original_data = None
+            visualizer.set_data(None)
+            stats_calculator.set_data(None)
             return jsonify(load_result), 400
         
+        # Ensure data was loaded successfully
+        if data_handler.data is None:
+            # Reset state if data is None
+            data_handler.data = None
+            data_handler.original_data = None
+            visualizer.set_data(None)
+            stats_calculator.set_data(None)
+            return jsonify({
+                'success': False,
+                'error': 'Data loaded but DataFrame is None'
+            }), 400
+        
         # Validate DataFrame structure
+        print(f"Validating DataFrame: shape={data_handler.data.shape}")
         validation_result = validate_dataframe_structure(data_handler.data)
+        print(f"Validation result: valid={validation_result.get('valid', False)}")
         if not validation_result['valid']:
+            # Reset state on validation failure
+            data_handler.data = None
+            data_handler.original_data = None
+            visualizer.set_data(None)
+            stats_calculator.set_data(None)
             return jsonify(validation_result), 400
         
         # Sanitize column names
         data_handler.data = sanitize_column_names(data_handler.data)
+        
+        # Double-check data is still valid after sanitization
+        if data_handler.data is None:
+            data_handler.data = None
+            data_handler.original_data = None
+            visualizer.set_data(None)
+            stats_calculator.set_data(None)
+            return jsonify({
+                'success': False,
+                'error': 'Data became None after sanitization'
+            }), 400
         
         # Update visualizer and stats calculator
         visualizer.set_data(data_handler.data)
         stats_calculator.set_data(data_handler.data)
         
         # Create preview
+        print("Creating data preview...")
         preview_result = create_data_preview(data_handler.data)
+        print(f"Preview created: success={preview_result.get('success', True)}")
+        
+        # Check if preview creation failed
+        if not preview_result.get('success', True):
+            return jsonify({
+                'success': False,
+                'error': preview_result.get('error', 'Failed to create preview')
+            }), 400
         
         # Save session
+        print("Saving session data...")
         session_data = {
             'session_id': session_id,
             'filename': filename,
@@ -124,6 +182,7 @@ def upload_file():
         }
         sessions[session_id] = session_data
         save_session_data(session_id, session_data, app.config['SESSION_FOLDER'])
+        print("Session saved")
         
         # Log operation
         operation_log = create_operation_log('upload', {
@@ -132,6 +191,7 @@ def upload_file():
             'file_size_mb': size_validation['file_size_mb']
         })
         
+        print("Returning success response")
         return jsonify({
             'success': True,
             'session_id': session_id,
@@ -142,10 +202,29 @@ def upload_file():
         })
         
     except Exception as e:
+        # Reset state on any exception
+        try:
+            data_handler.data = None
+            data_handler.original_data = None
+            visualizer.set_data(None)
+            stats_calculator.set_data(None)
+        except:
+            pass  # Ignore errors during cleanup
+        
+        # Get error details safely
+        error_msg = str(e)
+        try:
+            tb = traceback.format_exc()
+            # Print to console for debugging
+            print(f"ERROR in upload_file: {error_msg}")
+            print(f"Traceback:\n{tb}")
+        except:
+            tb = 'Unable to get traceback'
+        
         return jsonify({
             'success': False,
-            'error': f'Upload failed: {str(e)}',
-            'traceback': traceback.format_exc()
+            'error': f'Upload failed: {error_msg}',
+            'traceback': tb
         }), 500
 
 
@@ -450,20 +529,52 @@ def download_data():
         format_type = data['format']
         filename = data.get('filename')
         
+        # Check if data is available
+        if data_handler.data is None:
+            return jsonify({
+                'success': False,
+                'error': 'No data available to download. Please upload a file first.'
+            }), 400
+        
         # Export data
-        export_result = data_handler.export_data(format_type)
+        export_result = data_handler.export_data(format_type, filename)
         
         if not export_result['success']:
             return jsonify(export_result), 400
         
         # Return file for download
-        return send_file(
-            io.BytesIO(export_result['data']) if format_type == 'excel' else 
-            io.BytesIO(export_result['data'].encode()),
-            as_attachment=True,
-            download_name=export_result['filename'],
-            mimetype='application/octet-stream'
-        )
+        try:
+            if format_type == 'excel':
+                file_obj = io.BytesIO(export_result['data'])
+                mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            elif format_type == 'json':
+                file_obj = io.BytesIO(export_result['data'].encode('utf-8'))
+                mimetype = 'application/json'
+            else:  # CSV
+                file_obj = io.BytesIO(export_result['data'].encode('utf-8'))
+                mimetype = 'text/csv'
+            
+            file_obj.seek(0)  # Ensure we're at the start of the file
+            
+            file_size = len(export_result['data']) if isinstance(export_result['data'], (str, bytes)) else len(file_obj.getvalue())
+            print(f"Downloading file: {export_result['filename']}, size: {file_size} bytes, format: {format_type}")
+            
+            response = send_file(
+                file_obj,
+                as_attachment=True,
+                download_name=export_result['filename'],
+                mimetype=mimetype
+            )
+            
+            # Add CORS headers for file download
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+            
+            return response
+        except Exception as file_error:
+            print(f"Error creating file object: {file_error}")
+            raise
         
     except Exception as e:
         return jsonify({

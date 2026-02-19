@@ -10,6 +10,12 @@ import numpy as np
 import json
 from typing import Dict, List, Any, Optional
 import io
+import sys
+import os
+
+# Add utils to path for helper functions
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from utils.helpers import replace_nan_with_none
 
 
 class DataHandler:
@@ -31,28 +37,80 @@ class DataHandler:
         Returns:
             Dict containing loaded data and metadata
         """
+        # Reset state before loading new data
+        self.data = None
+        self.original_data = None
+        
         try:
             if file_type == 'csv':
                 self.data = pd.read_csv(io.BytesIO(file_content), **kwargs)
             elif file_type == 'excel':
                 self.data = pd.read_excel(io.BytesIO(file_content), **kwargs)
             elif file_type == 'json':
-                self.data = pd.read_json(io.BytesIO(file_content), **kwargs)
+                # Try different JSON formats that pandas supports
+                json_content = file_content.decode('utf-8')
+                json_data = json.loads(json_content)
+                
+                # Handle different JSON structures
+                if isinstance(json_data, list):
+                    # Array of objects - pandas can handle this directly
+                    self.data = pd.read_json(io.BytesIO(file_content), orient='records', **kwargs)
+                elif isinstance(json_data, dict):
+                    # Check if it's a nested structure that needs flattening
+                    if any(isinstance(v, (list, dict)) for v in json_data.values()):
+                        # Try to normalize nested JSON
+                        try:
+                            self.data = pd.json_normalize(json_data)
+                        except:
+                            # Fallback: try reading as records
+                            self.data = pd.read_json(io.BytesIO(file_content), **kwargs)
+                    else:
+                        # Simple flat dict - convert to DataFrame
+                        self.data = pd.DataFrame([json_data])
+                else:
+                    # Try pandas default reading
+                    self.data = pd.read_json(io.BytesIO(file_content), **kwargs)
             else:
                 raise ValueError(f"Unsupported file type: {file_type}")
                 
             self.original_data = self.data.copy()
+            print(f"DataFrame created: shape={self.data.shape}, columns={len(self.data.columns)}")
+            
+            # Convert dtypes to string for JSON serialization
+            print("Converting dtypes...")
+            dtypes_dict = {str(k): str(v) for k, v in self.data.dtypes.to_dict().items()}
+            
+            # Only convert preview data for response - full data stays as DataFrame
+            # This avoids timeout on large files
+            print("Creating preview dict (first 100 rows)...")
+            preview_df = self.data.head(100)  # Get first 100 rows for preview
+            preview_dict = preview_df.to_dict('records')
+            print("Preview dict created")
+            
+            # For the response, send preview data only
+            # Full data remains in self.data DataFrame for operations
+            print("Preparing response data...")
+            data_to_send = replace_nan_with_none(preview_dict)
             
             return {
                 'success': True,
-                'data': self.data.to_dict('records'),
+                'data': data_to_send,  # Preview data only
                 'columns': list(self.data.columns),
-                'shape': self.data.shape,
-                'dtypes': self.data.dtypes.to_dict(),
-                'preview': self.data.head(10).to_dict('records')
+                'shape': list(self.data.shape),  # Full shape info
+                'dtypes': dtypes_dict,
+                'preview': replace_nan_with_none(preview_dict),
+                'note': 'Full dataset loaded and available for operations'
             }
+        except json.JSONDecodeError as e:
+            # Reset state on error
+            self.data = None
+            self.original_data = None
+            return {'success': False, 'error': f'Invalid JSON format: {str(e)}'}
         except Exception as e:
-            return {'success': False, 'error': str(e)}
+            # Reset state on error
+            self.data = None
+            self.original_data = None
+            return {'success': False, 'error': f'Error loading {file_type} file: {str(e)}'}
     
     def clean_data(self, operations: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
@@ -163,10 +221,13 @@ class DataHandler:
                             'removed': before_count - after_count
                         })
                         
+            # Convert DataFrame to dict and replace NaN with None for JSON serialization
+            data_dict = self.data.to_dict('records')
+            
             return {
                 'success': True,
-                'data': self.data.to_dict('records'),
-                'shape': self.data.shape,
+                'data': replace_nan_with_none(data_dict),
+                'shape': list(self.data.shape),  # Convert tuple to list for JSON
                 'results': results
             }
             
@@ -208,10 +269,13 @@ class DataHandler:
                         ~filtered_data[column].astype(str).str.contains(str(value), na=False)
                     ]
                     
+            # Convert DataFrame to dict and replace NaN with None for JSON serialization
+            filtered_dict = filtered_data.to_dict('records')
+            
             return {
                 'success': True,
-                'data': filtered_data.to_dict('records'),
-                'shape': filtered_data.shape
+                'data': replace_nan_with_none(filtered_dict),
+                'shape': list(filtered_data.shape)  # Convert tuple to list for JSON
             }
             
         except Exception as e:
@@ -255,38 +319,51 @@ class DataHandler:
                     aggregations = transformation.get('aggregations', {})
                     self.data = self.data.groupby(group_by).agg(aggregations).reset_index()
                     
+            # Convert DataFrame to dict and replace NaN with None for JSON serialization
+            data_dict = self.data.to_dict('records')
+            
             return {
                 'success': True,
-                'data': self.data.to_dict('records'),
-                'shape': self.data.shape,
+                'data': replace_nan_with_none(data_dict),
+                'shape': list(self.data.shape),  # Convert tuple to list for JSON
                 'columns': list(self.data.columns)
             }
             
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
-    def export_data(self, format_type: str) -> Dict[str, Any]:
+    def export_data(self, format_type: str, filename: str = None) -> Dict[str, Any]:
         """
         Export data in specified format
         
         Args:
             format_type: Export format ('csv', 'excel', 'json')
+            filename: Optional custom filename (without extension)
             
         Returns:
             Dict containing exported data
         """
         try:
+            if self.data is None:
+                return {'success': False, 'error': 'No data to export'}
+            
+            # Determine filename
+            if not filename:
+                filename = 'cleaned_data'
+            
             if format_type == 'csv':
                 output = self.data.to_csv(index=False)
-                return {'success': True, 'data': output, 'filename': 'cleaned_data.csv'}
+                return {'success': True, 'data': output, 'filename': f'{filename}.csv'}
             elif format_type == 'excel':
                 output = io.BytesIO()
                 self.data.to_excel(output, index=False, engine='openpyxl')
                 output.seek(0)
-                return {'success': True, 'data': output.getvalue(), 'filename': 'cleaned_data.xlsx'}
+                return {'success': True, 'data': output.getvalue(), 'filename': f'{filename}.xlsx'}
             elif format_type == 'json':
-                output = self.data.to_json(orient='records', indent=2)
-                return {'success': True, 'data': output, 'filename': 'cleaned_data.json'}
+                # Replace NaN with None for JSON serialization
+                data_dict = self.data.to_dict('records')
+                output = json.dumps(replace_nan_with_none(data_dict), indent=2)
+                return {'success': True, 'data': output, 'filename': f'{filename}.json'}
             else:
                 return {'success': False, 'error': f'Unsupported format: {format_type}'}
                 
