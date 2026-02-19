@@ -55,6 +55,13 @@ class AlchemistApp {
         document.getElementById('fillMissingBtn').addEventListener('click', () => this.showFillMissingModal());
         document.getElementById('removeOutliersBtn').addEventListener('click', () => this.removeOutliers());
         document.getElementById('convertTypesBtn').addEventListener('click', () => this.showConvertTypesModal());
+        document.getElementById('cleanTextBtn').addEventListener('click', () => this.showCleanTextModal());
+        document.getElementById('removeEmptyBtn').addEventListener('click', () => this.showRemoveEmptyModal());
+        
+        // Preview and undo/redo
+        document.getElementById('previewBtn').addEventListener('click', () => this.showPreviewModal());
+        document.getElementById('undoBtn').addEventListener('click', () => this.undo());
+        document.getElementById('redoBtn').addEventListener('click', () => this.redo());
 
         // Filters
         document.getElementById('applyFilterBtn').addEventListener('click', () => this.applyFilter());
@@ -1221,9 +1228,44 @@ class AlchemistApp {
     }
 
     resetData() {
-        if (confirm('Are you sure you want to reset all changes? This will reload the original data.')) {
-            // This would need to be implemented to reload from session
-            this.showNotification('Data reset functionality not yet implemented', 'info');
+        this.resetDataAsync();
+    }
+
+    async resetDataAsync() {
+        if (!confirm('Are you sure you want to reset all changes? This will reload the original data.')) {
+            return;
+        }
+
+        try {
+            this.showLoading(true);
+
+            const response = await fetch(`${this.apiBase}/reset`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    session_id: this.currentSession
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.currentData = result.data;
+                this.filteredData = null;
+                this.currentPage = 1;
+                this.renderTable();
+
+                this.updateUndoRedoButtons(false, false);
+                this.showNotification(result.message || 'Data reset successfully', 'success');
+            } else {
+                throw new Error(result.error);
+            }
+        } catch (error) {
+            this.showNotification(`Failed to reset data: ${error.message}`, 'error');
+        } finally {
+            this.showLoading(false);
         }
     }
 
@@ -1340,6 +1382,420 @@ class AlchemistApp {
         } else {
             overlay.classList.add('hidden');
         }
+    }
+
+    showCleanTextModal() {
+        const modalBody = document.getElementById('modalBody');
+        const columns = this.currentData ? Object.keys(this.currentData[0]) : [];
+
+        modalBody.innerHTML = `
+            <div class="form-group">
+                <label>Select Columns:</label>
+                <div class="checkbox-group">
+                    ${columns.map(col => `
+                        <label class="checkbox-label">
+                            <input type="checkbox" value="${col}" checked> ${col}
+                        </label>
+                    `).join('')}
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Text Operations:</label>
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="trimWhitespace" checked> Trim Whitespace
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="normalizeCase"> Normalize Case
+                    </label>
+                </div>
+            </div>
+            <div class="form-group" id="caseTypeGroup" style="display: none;">
+                <label for="caseType">Case Type:</label>
+                <select id="caseType" class="form-control">
+                    <option value="lower">Lowercase</option>
+                    <option value="upper">Uppercase</option>
+                    <option value="title">Title Case</option>
+                </select>
+            </div>
+        `;
+
+        // Show/hide case type options
+        document.getElementById('normalizeCase').addEventListener('change', (e) => {
+            document.getElementById('caseTypeGroup').style.display = e.target.checked ? 'block' : 'none';
+        });
+
+        this.showModal('Clean Text Data', () => this.cleanText());
+    }
+
+    async cleanText() {
+        try {
+            const selectedColumns = Array.from(document.querySelectorAll('#modalBody input[type="checkbox"]:checked'))
+                .map(cb => cb.value)
+                .filter(val => !['trimWhitespace', 'normalizeCase'].includes(val));
+
+            const textOperations = [];
+            if (document.getElementById('trimWhitespace').checked) {
+                textOperations.push('trim_whitespace');
+            }
+            if (document.getElementById('normalizeCase').checked) {
+                textOperations.push('normalize_case');
+            }
+
+            if (selectedColumns.length === 0 || textOperations.length === 0) {
+                this.showNotification('Please select columns and operations', 'warning');
+                return;
+            }
+
+            this.showLoading(true);
+
+            const response = await fetch(`${this.apiBase}/clean`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    session_id: this.currentSession,
+                    operations: [{
+                        type: 'clean_text',
+                        columns: selectedColumns,
+                        text_operations: textOperations,
+                        case_type: document.getElementById('caseType').value
+                    }]
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.currentData = result.data;
+                this.filteredData = null;
+                this.renderTable();
+                this.showNotification('Text cleaning completed successfully', 'success');
+                this.closeModal();
+            } else {
+                throw new Error(result.error);
+            }
+        } catch (error) {
+            this.showNotification(`Failed to clean text: ${error.message}`, 'error');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    showRemoveEmptyModal() {
+        const modalBody = document.getElementById('modalBody');
+
+        modalBody.innerHTML = `
+            <div class="form-group">
+                <label>Target:</label>
+                <div class="radio-group">
+                    <label class="radio-label">
+                        <input type="radio" name="target" value="rows" checked> Remove Empty Rows
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="target" value="columns"> Remove Empty Columns
+                    </label>
+                </div>
+            </div>
+        `;
+
+        this.showModal('Remove Empty Rows/Columns', () => this.removeEmpty());
+    }
+
+    async removeEmpty() {
+        try {
+            const target = document.querySelector('input[name="target"]:checked').value;
+
+            this.showLoading(true);
+
+            const response = await fetch(`${this.apiBase}/clean`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    session_id: this.currentSession,
+                    operations: [{
+                        type: 'remove_empty',
+                        target: target
+                    }]
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.currentData = result.data;
+                this.filteredData = null;
+                this.renderTable();
+                this.showNotification(`Empty ${target} removed successfully`, 'success');
+                this.closeModal();
+            } else {
+                throw new Error(result.error);
+            }
+        } catch (error) {
+            this.showNotification(`Failed to remove empty ${target}: ${error.message}`, 'error');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    showPreviewModal() {
+        const modalBody = document.getElementById('modalBody');
+        const columns = this.currentData ? Object.keys(this.currentData[0]) : [];
+
+        modalBody.innerHTML = `
+            <div class="form-group">
+                <label>Select Operations to Preview:</label>
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="previewDuplicates"> Remove Duplicates
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="previewEmpty"> Remove Empty Rows
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="previewText"> Clean Text
+                    </label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="sampleSize">Sample Size:</label>
+                <select id="sampleSize" class="form-control">
+                    <option value="50">50 rows</option>
+                    <option value="100" selected>100 rows</option>
+                    <option value="200">200 rows</option>
+                </select>
+            </div>
+            <div class="form-group" id="textOptions" style="display: none;">
+                <label>Text Operations:</label>
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="previewTrim"> Trim Whitespace
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="previewCase"> Normalize Case
+                    </label>
+                </div>
+            </div>
+        `;
+
+        // Show/hide text options
+        document.getElementById('previewText').addEventListener('change', (e) => {
+            document.getElementById('textOptions').style.display = e.target.checked ? 'block' : 'none';
+        });
+
+        this.showModal('Preview Operations', () => this.previewOperations());
+    }
+
+    async previewOperations() {
+        try {
+            const operations = [];
+
+            if (document.getElementById('previewDuplicates').checked) {
+                operations.push({ type: 'remove_duplicates' });
+            }
+
+            if (document.getElementById('previewEmpty').checked) {
+                operations.push({ type: 'remove_empty', target: 'rows' });
+            }
+
+            if (document.getElementById('previewText').checked) {
+                const textOps = [];
+                if (document.getElementById('previewTrim').checked) {
+                    textOps.push('trim_whitespace');
+                }
+                if (document.getElementById('previewCase').checked) {
+                    textOps.push('normalize_case');
+                }
+
+                if (textOps.length > 0) {
+                    const columns = Object.keys(this.currentData[0]);
+                    operations.push({
+                        type: 'clean_text',
+                        columns: columns,
+                        text_operations: textOps,
+                        case_type: 'lower'
+                    });
+                }
+            }
+
+            if (operations.length === 0) {
+                this.showNotification('Please select at least one operation to preview', 'warning');
+                return;
+            }
+
+            const sampleSize = parseInt(document.getElementById('sampleSize').value);
+
+            this.showLoading(true);
+
+            const response = await fetch(`${this.apiBase}/preview`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    operations: operations,
+                    sample_size: sampleSize
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showPreviewResults(result);
+            } else {
+                throw new Error(result.error);
+            }
+        } catch (error) {
+            this.showNotification(`Failed to preview operations: ${error.message}`, 'error');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    showPreviewResults(result) {
+        const modalBody = document.getElementById('modalBody');
+
+        let html = `
+            <div class="preview-results">
+                <h4>Preview Results</h4>
+                <p><strong>Note:</strong> ${result.note}</p>
+                
+                <h5>Operation Summary:</h5>
+                <ul>
+                    ${result.results.map(op => `
+                        <li>${op.operation}: ${op.removed ? `Removed ${op.removed} items` : `Affected ${op.affected_rows || op.columns.length} columns`}</li>
+                    `).join('')}
+                </ul>
+                
+                <div class="preview-comparison">
+                    <div class="preview-section">
+                        <h6>Original Data (Sample)</h6>
+                        <div class="table-container">
+                            ${this.createPreviewTable(result.original_data)}
+                        </div>
+                    </div>
+                    <div class="preview-section">
+                        <h6>Preview Data (After Operations)</h6>
+                        <div class="table-container">
+                            ${this.createPreviewTable(result.preview_data)}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        modalBody.innerHTML = html;
+
+        // Update modal footer
+        const modalFooter = document.getElementById('modalFooter');
+        modalFooter.innerHTML = `
+            <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Close</button>
+        `;
+    }
+
+    createPreviewTable(data) {
+        if (!data || data.length === 0) return '<p>No data to display</p>';
+
+        const headers = Object.keys(data[0]);
+        let html = '<table class="preview-table"><thead><tr>';
+        
+        headers.forEach(header => {
+            html += `<th>${header}</th>`;
+        });
+        
+        html += '</tr></thead><tbody>';
+        
+        data.forEach(row => {
+            html += '<tr>';
+            headers.forEach(header => {
+                const value = row[header];
+                html += `<td>${value !== null && value !== undefined ? value : ''}</td>`;
+            });
+            html += '</tr>';
+        });
+        
+        html += '</tbody></table>';
+        return html;
+    }
+
+    async undo() {
+        try {
+            this.showLoading(true);
+
+            const response = await fetch(`${this.apiBase}/undo`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.currentData = result.data;
+                this.filteredData = null;
+                this.renderTable();
+                this.showNotification(result.message || 'Undo successful', 'success');
+            } else {
+                throw new Error(result.error);
+            }
+        } catch (error) {
+            this.showNotification(`Failed to undo: ${error.message}`, 'error');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    async redo() {
+        try {
+            this.showLoading(true);
+
+            const response = await fetch(`${this.apiBase}/redo`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.currentData = result.data;
+                this.filteredData = null;
+                this.renderTable();
+                this.showNotification(result.message || 'Redo successful', 'success');
+            } else {
+                throw new Error(result.error);
+            }
+        } catch (error) {
+            this.showNotification(`Failed to redo: ${error.message}`, 'error');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    async loadOperationHistory() {
+        try {
+            const response = await fetch(`${this.apiBase}/history`);
+            const result = await response.json();
+
+            if (result.success) {
+                this.updateUndoRedoButtons(result.can_undo, result.can_redo);
+            }
+        } catch (error) {
+            console.error('Failed to load operation history:', error);
+        }
+    }
+
+    updateUndoRedoButtons(canUndo, canRedo) {
+        const undoBtn = document.getElementById('undoBtn');
+        const redoBtn = document.getElementById('redoBtn');
+
+        undoBtn.disabled = !canUndo;
+        redoBtn.disabled = !canRedo;
     }
 
     saveSessionToStorage() {

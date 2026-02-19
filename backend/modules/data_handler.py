@@ -12,6 +12,8 @@ from typing import Dict, List, Any, Optional
 import io
 import sys
 import os
+import copy
+from datetime import datetime
 
 # Add utils to path for helper functions
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -24,6 +26,9 @@ class DataHandler:
     def __init__(self):
         self.data = None
         self.original_data = None
+        self.operation_history = []
+        self.redo_stack = []
+        self.max_history = 50
         
     def load_data(self, file_content: bytes, file_type: str, **kwargs) -> Dict[str, Any]:
         """
@@ -221,6 +226,51 @@ class DataHandler:
                             'removed': before_count - after_count
                         })
                         
+                elif op_type == 'clean_text':
+                    columns = operation.get('columns', [])
+                    operations = operation.get('text_operations', [])
+                    
+                    for col in columns:
+                        if col in self.data.columns:
+                            for text_op in operations:
+                                if text_op == 'trim_whitespace':
+                                    self.data[col] = self.data[col].astype(str).str.strip()
+                                elif text_op == 'normalize_case':
+                                    case_type = operation.get('case_type', 'lower')
+                                    if case_type == 'lower':
+                                        self.data[col] = self.data[col].astype(str).str.lower()
+                                    elif case_type == 'upper':
+                                        self.data[col] = self.data[col].astype(str).str.upper()
+                                    elif case_type == 'title':
+                                        self.data[col] = self.data[col].astype(str).str.title()
+                    
+                    results.append({
+                        'operation': 'clean_text',
+                        'columns': columns,
+                        'text_operations': operations
+                    })
+                    
+                elif op_type == 'remove_empty':
+                    target = operation.get('target', 'rows')
+                    before_shape = self.data.shape
+                    
+                    if target == 'rows':
+                        # Remove rows that are completely empty
+                        self.data = self.data.dropna(how='all')
+                    elif target == 'columns':
+                        # Remove columns that are completely empty
+                        self.data = self.data.dropna(axis=1, how='all')
+                    
+                    after_shape = self.data.shape
+                    results.append({
+                        'operation': 'remove_empty',
+                        'target': target,
+                        'before_shape': before_shape,
+                        'after_shape': after_shape,
+                        'removed_rows': before_shape[0] - after_shape[0] if target == 'rows' else 0,
+                        'removed_columns': before_shape[1] - after_shape[1] if target == 'columns' else 0
+                    })
+                        
             # Convert DataFrame to dict and replace NaN with None for JSON serialization
             data_dict = self.data.to_dict('records')
             
@@ -231,6 +281,268 @@ class DataHandler:
                 'results': results
             }
             
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def preview_operations(self, operations: List[Dict[str, Any]], sample_size: int = 100) -> Dict[str, Any]:
+        """
+        Preview the effect of operations on a sample of data without applying them
+        
+        Args:
+            operations: List of operations to preview
+            sample_size: Number of rows to include in preview
+            
+        Returns:
+            Dict containing preview data and operation results
+        """
+        try:
+            if self.data is None:
+                return {'success': False, 'error': 'No data loaded'}
+            
+            # Create a copy of the data for preview
+            preview_data = self.data.head(sample_size).copy()
+            original_preview = preview_data.copy()
+            results = []
+            
+            for operation in operations:
+                op_type = operation.get('type')
+                
+                if op_type == 'clean_text':
+                    columns = operation.get('columns', [])
+                    text_operations = operation.get('text_operations', [])
+                    
+                    for col in columns:
+                        if col in preview_data.columns:
+                            for text_op in text_operations:
+                                if text_op == 'trim_whitespace':
+                                    preview_data[col] = preview_data[col].astype(str).str.strip()
+                                elif text_op == 'normalize_case':
+                                    case_type = operation.get('case_type', 'lower')
+                                    if case_type == 'lower':
+                                        preview_data[col] = preview_data[col].astype(str).str.lower()
+                                    elif case_type == 'upper':
+                                        preview_data[col] = preview_data[col].astype(str).str.upper()
+                                    elif case_type == 'title':
+                                        preview_data[col] = preview_data[col].astype(str).str.title()
+                    
+                    results.append({
+                        'operation': 'clean_text',
+                        'columns': columns,
+                        'text_operations': text_operations,
+                        'affected_rows': len(preview_data)
+                    })
+                    
+                elif op_type == 'remove_empty':
+                    target = operation.get('target', 'rows')
+                    before_shape = preview_data.shape
+                    
+                    if target == 'rows':
+                        preview_data = preview_data.dropna(how='all')
+                    elif target == 'columns':
+                        preview_data = preview_data.dropna(axis=1, how='all')
+                    
+                    after_shape = preview_data.shape
+                    results.append({
+                        'operation': 'remove_empty',
+                        'target': target,
+                        'before_shape': before_shape,
+                        'after_shape': after_shape,
+                        'removed_rows': before_shape[0] - after_shape[0] if target == 'rows' else 0,
+                        'removed_columns': before_shape[1] - after_shape[1] if target == 'columns' else 0
+                    })
+                    
+                elif op_type == 'remove_duplicates':
+                    before_count = len(preview_data)
+                    preview_data = preview_data.drop_duplicates()
+                    after_count = len(preview_data)
+                    results.append({
+                        'operation': 'remove_duplicates',
+                        'removed': before_count - after_count
+                    })
+                    
+                elif op_type == 'fill_missing':
+                    column = operation.get('column')
+                    method = operation.get('method', 'mean')
+                    value = operation.get('value')
+                    
+                    if method == 'mean' and preview_data[column].dtype in ['int64', 'float64']:
+                        fill_value = preview_data[column].mean()
+                    elif method == 'median' and preview_data[column].dtype in ['int64', 'float64']:
+                        fill_value = preview_data[column].median()
+                    elif method == 'mode':
+                        fill_value = preview_data[column].mode().iloc[0] if not preview_data[column].mode().empty else value
+                    else:
+                        fill_value = value
+                        
+                    missing_before = preview_data[column].isnull().sum()
+                    preview_data[column] = preview_data[column].fillna(fill_value)
+                    missing_after = preview_data[column].isnull().sum()
+                    
+                    results.append({
+                        'operation': 'fill_missing',
+                        'column': column,
+                        'filled': missing_before - missing_after
+                    })
+            
+            # Convert both original and preview data for comparison
+            original_dict = original_preview.to_dict('records')
+            preview_dict = preview_data.to_dict('records')
+            
+            return {
+                'success': True,
+                'original_data': replace_nan_with_none(original_dict),
+                'preview_data': replace_nan_with_none(preview_dict),
+                'results': results,
+                'sample_size': len(preview_data),
+                'note': f'Preview showing first {sample_size} rows only'
+            }
+            
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def save_state(self, operation_description: str = None) -> None:
+        """
+        Save current state to operation history for undo functionality
+        
+        Args:
+            operation_description: Description of the operation being performed
+        """
+        if self.data is not None:
+            state = {
+                'data': self.data.copy(),
+                'timestamp': datetime.now(),
+                'description': operation_description or 'Data operation'
+            }
+            
+            self.operation_history.append(state)
+            
+            # Clear redo stack when new operation is performed
+            self.redo_stack.clear()
+            
+            # Limit history size
+            if len(self.operation_history) > self.max_history:
+                self.operation_history.pop(0)
+    
+    def undo(self) -> Dict[str, Any]:
+        """
+        Undo the last operation
+        
+        Returns:
+            Dict containing operation result
+        """
+        try:
+            if len(self.operation_history) == 0:
+                return {'success': False, 'error': 'No operations to undo'}
+            
+            # Save current state to redo stack
+            if self.data is not None:
+                current_state = {
+                    'data': self.data.copy(),
+                    'timestamp': datetime.now(),
+                    'description': 'Current state before undo'
+                }
+                self.redo_stack.append(current_state)
+            
+            # Restore previous state
+            previous_state = self.operation_history.pop()
+            self.data = previous_state['data'].copy()
+            
+            # Convert DataFrame to dict and replace NaN with None for JSON serialization
+            data_dict = self.data.to_dict('records')
+            
+            return {
+                'success': True,
+                'data': replace_nan_with_none(data_dict),
+                'shape': list(self.data.shape),
+                'message': f"Undid: {previous_state['description']}"
+            }
+            
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def redo(self) -> Dict[str, Any]:
+        """
+        Redo the last undone operation
+        
+        Returns:
+            Dict containing operation result
+        """
+        try:
+            if len(self.redo_stack) == 0:
+                return {'success': False, 'error': 'No operations to redo'}
+            
+            # Save current state to operation history
+            if self.data is not None:
+                current_state = {
+                    'data': self.data.copy(),
+                    'timestamp': datetime.now(),
+                    'description': 'Current state before redo'
+                }
+                self.operation_history.append(current_state)
+            
+            # Restore redo state
+            redo_state = self.redo_stack.pop()
+            self.data = redo_state['data'].copy()
+            
+            # Convert DataFrame to dict and replace NaN with None for JSON serialization
+            data_dict = self.data.to_dict('records')
+            
+            return {
+                'success': True,
+                'data': replace_nan_with_none(data_dict),
+                'shape': list(self.data.shape),
+                'message': f"Redid: {redo_state['description']}"
+            }
+            
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def get_operation_history(self) -> Dict[str, Any]:
+        """
+        Get the operation history
+        
+        Returns:
+            Dict containing operation history
+        """
+        try:
+            history = []
+            for i, state in enumerate(self.operation_history):
+                history.append({
+                    'index': i,
+                    'timestamp': state['timestamp'].isoformat(),
+                    'description': state['description'],
+                    'shape': state['data'].shape
+                })
+            
+            return {
+                'success': True,
+                'history': history,
+                'can_undo': len(self.operation_history) > 0,
+                'can_redo': len(self.redo_stack) > 0
+            }
+            
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def reset(self) -> Dict[str, Any]:
+        """Reset the current dataset back to the originally loaded data."""
+        try:
+            if self.original_data is None:
+                return {'success': False, 'error': 'No original data available to reset to'}
+
+            self.data = self.original_data.copy()
+            self.operation_history.clear()
+            self.redo_stack.clear()
+
+            data_dict = self.data.to_dict('records')
+
+            return {
+                'success': True,
+                'data': replace_nan_with_none(data_dict),
+                'shape': list(self.data.shape),
+                'message': 'Data reset to original state'
+            }
+
         except Exception as e:
             return {'success': False, 'error': str(e)}
     

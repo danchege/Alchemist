@@ -258,6 +258,10 @@ def clean_data():
         operations = data['operations']
         session_id = data.get('session_id')
         
+        # Save state before performing operations for undo functionality
+        operation_desc = f"Clean operations: {', '.join([op.get('type', 'unknown') for op in operations])}"
+        data_handler.save_state(operation_desc)
+        
         # Perform cleaning
         clean_result = data_handler.clean_data(operations)
         
@@ -611,6 +615,116 @@ def get_available_plots():
             'success': False,
             'error': f'Failed to get available plots: {str(e)}'
         }), 500
+
+
+@app.route('/api/preview', methods=['POST'])
+def preview_operations():
+    """
+    Preview data cleaning operations before applying them
+    
+    Expected JSON payload:
+    {
+        "operations": [...],
+        "sample_size": 100  // optional
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data or 'operations' not in data:
+            return jsonify({'success': False, 'error': 'No operations provided'}), 400
+        
+        operations = data['operations']
+        sample_size = data.get('sample_size', 100)
+        
+        # Preview operations
+        preview_result = data_handler.preview_operations(operations, sample_size)
+        
+        return jsonify(preview_result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/undo', methods=['POST'])
+def undo_operation():
+    """
+    Undo the last data operation
+    
+    Expected JSON payload:
+    {}  // no payload required
+    """
+    try:
+        undo_result = data_handler.undo()
+        
+        if undo_result['success']:
+            # Update visualizer and stats calculator
+            visualizer.set_data(data_handler.data)
+            stats_calculator.set_data(data_handler.data)
+        
+        return jsonify(undo_result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/redo', methods=['POST'])
+def redo_operation():
+    """
+    Redo the last undone operation
+    
+    Expected JSON payload:
+    {}  // no payload required
+    """
+    try:
+        redo_result = data_handler.redo()
+        
+        if redo_result['success']:
+            # Update visualizer and stats calculator
+            visualizer.set_data(data_handler.data)
+            stats_calculator.set_data(data_handler.data)
+        
+        return jsonify(redo_result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/history', methods=['GET'])
+def get_operation_history():
+    """
+    Get the operation history
+    
+    Returns:
+        JSON with operation history and undo/redo availability
+    """
+    try:
+        history_result = data_handler.get_operation_history()
+        return jsonify(history_result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/reset', methods=['POST'])
+def reset_data():
+    """Reset the dataset back to the originally loaded data."""
+    try:
+        data = request.get_json(silent=True) or {}
+        session_id = data.get('session_id')
+
+        reset_result = data_handler.reset()
+
+        if reset_result.get('success'):
+            visualizer.set_data(data_handler.data)
+            stats_calculator.set_data(data_handler.data)
+
+            if session_id and session_id in sessions:
+                sessions[session_id]['last_reset'] = datetime.now().isoformat()
+                save_session_data(session_id, sessions[session_id], app.config['SESSION_FOLDER'])
+
+            operation_log = create_operation_log('reset', {})
+            reset_result['operation_log'] = operation_log
+
+        return jsonify(reset_result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.errorhandler(413)
