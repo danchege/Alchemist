@@ -8,6 +8,31 @@ Alchemist is a web-based data cleaning and transformation tool built with a Pyth
 
 https://alchemist-6qfo.onrender.com/
 
+## Technology
+
+- **Backend**: Python (Flask)
+- **Frontend**: HTML, CSS, JavaScript (served by Flask)
+- **Visualization**: Plotly.js (frontend) + Matplotlib/Seaborn/Plotly (backend)
+- **Deployment**: Render (live demo)
+
+## Python Libraries Used
+
+Backend dependencies (see `backend/requirements.txt`):
+
+- **Flask**
+- **Flask-CORS**
+- **pandas**
+- **numpy**
+- **scipy**
+- **matplotlib**
+- **seaborn**
+- **plotly**
+- **openpyxl** (Excel `.xlsx` support)
+- **xlrd** (Excel `.xls` support)
+- **python-dateutil**
+- **pytz**
+- **gunicorn** (production server)
+
 ## Features
 
 ### Data Upload & Management
