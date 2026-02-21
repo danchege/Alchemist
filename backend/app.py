@@ -32,7 +32,22 @@ CORS(app)  # Enable CORS for frontend communication
 
 # Configuration
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
-app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
+
+_IS_FROZEN = getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
+
+_RUNTIME_BASE_DIR = (
+    os.path.dirname(sys.executable)
+    if _IS_FROZEN
+    else os.path.dirname(os.path.dirname(__file__))
+)
+
+_FRONTEND_DIR = (
+    os.path.join(sys._MEIPASS, 'frontend')
+    if _IS_FROZEN
+    else os.path.join(_RUNTIME_BASE_DIR, 'frontend')
+)
+
+app.config['UPLOAD_FOLDER'] = os.path.join(_RUNTIME_BASE_DIR, 'data')
 app.config['SESSION_FOLDER'] = os.path.join(app.config['UPLOAD_FOLDER'], 'sessions')
 
 # Ensure directories exist
@@ -51,13 +66,13 @@ sessions = {}
 @app.route('/')
 def index():
     """Serve the frontend index page"""
-    return send_from_directory('../frontend', 'index.html')
+    return send_from_directory(_FRONTEND_DIR, 'index.html')
 
 
 @app.route('/<path:filename>')
 def static_files(filename):
     """Serve static frontend files"""
-    return send_from_directory('../frontend', filename)
+    return send_from_directory(_FRONTEND_DIR, filename)
 
 
 @app.route('/api/health', methods=['GET'])

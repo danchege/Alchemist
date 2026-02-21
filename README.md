@@ -8,6 +8,8 @@ Alchemist is a web-based data cleaning and transformation tool built with a Pyth
 
 https://alchemist-6qfo.onrender.com/
 
+You can use the hosted online version at the link above, or run it locally using `./alchemist.sh` (see Installation & Setup).
+
 ## Technology
 
 - **Backend**: Python (Flask)
@@ -110,6 +112,25 @@ Alchemist/
 - Python 3.8+
 - pip
 - Modern browser (Chrome, Firefox, Safari, Edge)
+
+### Run using `alchemist.sh` (recommended)
+
+From the project root:
+
+```bash
+chmod +x ./alchemist.sh
+./alchemist.sh run
+```
+
+Then open **http://127.0.0.1:5000**.
+
+To build an offline executable (PyInstaller):
+
+```bash
+./alchemist.sh build
+```
+
+The executable will be in `dist/Alchemist/`.
 
 ### Backend
 
