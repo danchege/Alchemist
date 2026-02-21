@@ -60,6 +60,11 @@ def static_files(filename):
     return send_from_directory('../frontend', filename)
 
 
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    return jsonify({'ok': True}), 200
+
+
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
     """
