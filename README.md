@@ -1,262 +1,173 @@
 # Alchemist - Data Cleaning and Transformation Tool
 
-Alchemist is a web-based data cleaning and transformation tool similar to OpenRefine, built with Python Flask backend and modern JavaScript frontend. It allows users to upload, clean, transform, visualize, and export datasets from CSV, Excel, and JSON formats.
+Alchemist is a web-based data cleaning and transformation tool similar to OpenRefine, built with a Python Flask backend and a modern JavaScript frontend. Upload, clean, transform, visualize, and export datasets from CSV, Excel, and JSON with session management and **case-insensitive** filtering and search.
+
+---
 
 ## Features
 
 ### Data Upload & Management
-- **Multiple Format Support**: Upload CSV, Excel (.xlsx, .xls), and JSON files
-- **Drag & Drop Interface**: Intuitive file upload with progress tracking
-- **Data Preview**: Instant preview of uploaded datasets with metadata
-- **Session Management**: Persistent sessions to save work progress
+- **Multiple format support**: CSV, Excel (.xlsx, .xls), and JSON
+- **Drag & drop**: File upload with progress
+- **Data preview**: Instant preview and metadata after upload
+- **Session management**: Persistent sessions; **New Session** clears state and returns to upload screen
 
 ### Data Cleaning Operations
-- **Remove Duplicates**: Eliminate duplicate rows from datasets
-- **Handle Missing Values**: Fill missing data using mean, median, mode, or custom values
-- **Outlier Detection**: Identify and remove outliers using IQR, Z-score, or Modified Z-score methods
-- **Data Type Conversion**: Convert columns between different data types
-- **Data Validation**: Comprehensive data quality checks and reports
+- **Remove duplicates**: Eliminate duplicate rows
+- **Handle missing values**: Fill with mean, median, mode, or custom value
+- **Outlier detection**: IQR, Z-score, or Modified Z-score
+- **Data type conversion**: Convert column types
+- **Text cleaning**: Trim whitespace, normalize case
+- **Remove empty rows/columns**
 
-### Data Transformation
-- **Filtering**: Apply complex filters with multiple operators (equals, contains, greater than, etc.)
-- **Column Operations**: Create, rename, drop, and transform columns
-- **Sorting**: Sort data by single or multiple columns
-- **Grouping & Aggregation**: Group data and calculate aggregations
+### Table & Column Tools
+- **Column header dropdown** (per column):
+  - **Sort A→Z / Z→A**: Sort ascending or descending
+  - **Filter**: Inline filter with operator (Equals, Not Equals, Greater Than, Less Than, Contains, Not Contains) and value
+  - **Column statistics**: Jump to Statistics view for that column
+- **Case-insensitive behavior**: All filters and table search are **case-insensitive** (e.g. "yes" matches "YES")
+- **Table search**: Real-time search across all columns (case-insensitive)
+- **Pagination**: Configurable rows per page
 
-### Visualization & Analysis
-- **Interactive Charts**: Create histograms, scatter plots, bar charts, box plots, heatmaps, line plots, and pie charts
-- **Statistical Analysis**: Descriptive statistics, correlation analysis, categorical statistics
-- **Data Quality Reports**: Comprehensive reports on data completeness and quality
-- **Real-time Updates**: Visualizations update automatically with data changes
+### Preview Operations
+- **Preview before applying**: Run remove duplicates, remove empty rows, clean text (trim, normalize case) on a sample and compare **Original** vs **Preview**
+- **Preview on current view**: If a filter is applied, preview runs on the **filtered data** so you see the effect on the subset you care about
+- **Download preview data**: In the Preview Results modal you can download:
+  - **Original** (before operations): CSV, Excel, JSON, TSV, HTML
+  - **Preview** (after operations): CSV, Excel, JSON, TSV, HTML
 
 ### Export & Download
-- **Multiple Formats**: Export cleaned data as CSV, Excel, or JSON
-- **Custom Filenames**: Choose custom filenames for exported files
-- **Preserve Formatting**: Maintain data integrity during export
+- **Download** (main button): Export full dataset from server (CSV, Excel, JSON)
+- **Download current view**: Export the **current table** (filtered or full) as CSV, Excel, JSON, TSV, or HTML without leaving the page
+- **Preview Results modal**: Download original or preview sample in CSV, Excel, JSON, TSV, or HTML
+
+### Visualization & Analysis
+- **Charts**: Histograms, scatter, bar, box, heatmap, line, pie (Plotly.js)
+- **Statistics**: Descriptive, categorical, correlation, data quality, outlier detection
+- **Undo / Redo**: Revert or reapply the last operation
+
+### Other
+- **Reset**: Restore dataset to last uploaded state
+- **Case-insensitive operations**: Filter and search ignore letter case
+
+---
 
 ## Project Structure
 
 ```
-data_refine_tool_web/
-│
-├── backend/                 # Python backend (Flask)
-│   ├── app.py              # Main Flask application with API endpoints
-│   ├── requirements.txt    # Python dependencies
-│   ├── modules/            # Core functionality modules
-│   │   ├── data_handler.py    # Data loading, cleaning, and transformation
-│   │   ├── visualization.py   # Chart generation and visualization
-│   │   └── stats.py           # Statistical analysis and reporting
-│   └── utils/              # Utility functions
-│       └── helpers.py          # File handling, validation, and helper functions
-│
-├── frontend/               # Web interface
-│   ├── index.html         # Main HTML page
-│   ├── styles.css         # CSS styling
-│   ├── app.js            # JavaScript application logic
-│   └── libs/             # External libraries (Plotly.js)
-│
-├── data/                  # Temporary storage for uploaded files
-└── README.md             # This documentation
+Alchemist/
+├── backend/
+│   ├── app.py              # Flask app and API
+│   ├── requirements.txt
+│   ├── modules/
+│   │   ├── data_handler.py # Load, clean, filter, preview
+│   │   ├── visualization.py
+│   │   └── stats.py
+│   └── utils/
+│       └── helpers.py
+├── frontend/
+│   ├── index.html
+│   ├── styles.css
+│   └── app.js
+├── data/                   # Uploads and session data
+└── README.md
 ```
+
+---
 
 ## Installation & Setup
 
 ### Prerequisites
-- Python 3.8 or higher
-- pip (Python package manager)
-- Modern web browser (Chrome, Firefox, Safari, Edge)
+- Python 3.8+
+- pip
+- Modern browser (Chrome, Firefox, Safari, Edge)
 
-### Backend Setup
+### Backend
 
-1. **Navigate to the backend directory:**
+1. Go to the backend directory:
    ```bash
-   cd data_refine_tool_web/backend
+   cd Alchemist/backend
    ```
 
-2. **Create a virtual environment (recommended):**
+2. (Optional) Create and activate a virtual environment:
    ```bash
    python -m venv venv
-   
-   # On Windows:
-   venv\Scripts\activate
-   
-   # On macOS/Linux:
-   source venv/bin/activate
+   # Windows: venv\Scripts\activate
+   # macOS/Linux: source venv/bin/activate
    ```
 
-3. **Install dependencies:**
+3. Install dependencies and run:
    ```bash
    pip install -r requirements.txt
-   ```
-
-4. **Start the Flask server:**
-   ```bash
    python app.py
    ```
 
-   The server will start on `http://localhost:5000`
+   Server runs at **http://localhost:5000**.
 
-### Frontend Setup
+### Frontend
 
-The frontend is served directly by the Flask application, so no additional setup is required. Simply open your web browser and navigate to `http://localhost:5000`.
-
-## Usage Guide
-
-### 1. Upload Data
-- Click "Select File" or drag and drop a CSV, Excel, or JSON file
-- Wait for the file to process and preview
-- The workspace will automatically open with your data loaded
-
-### 2. Explore Data
-- **Table View**: Browse your data in a sortable, searchable table
-- **Statistics View**: View descriptive statistics and data quality metrics
-- Use the search bar to filter data in real-time
-- Adjust rows per page for better navigation
-
-### 3. Clean Data
-- **Remove Duplicates**: Click "Remove Duplicates" to eliminate duplicate rows
-- **Fill Missing Values**: Choose a column and method to handle missing data
-- **Remove Outliers**: Detect and remove statistical outliers
-- **Convert Types**: Change data types for proper analysis
-
-### 4. Transform Data
-- **Apply Filters**: Use the filter panel to subset your data
-- **Create Visualizations**: Select plot types and parameters to generate charts
-- **Statistical Analysis**: Access various statistical analyses from the sidebar
-
-### 5. Export Results
-- Click "Download" to export your cleaned data
-- Choose from CSV, Excel, or JSON formats
-- Specify custom filenames if desired
-
-## API Endpoints
-
-The backend provides RESTful API endpoints for all operations:
-
-### Data Management
-- `POST /api/upload` - Upload and process data files
-- `GET /api/data/info` - Get current dataset information
-- `POST /api/download` - Export processed data
-
-### Data Operations
-- `POST /api/clean` - Perform data cleaning operations
-- `POST /api/filter` - Apply filters to data
-- `POST /api/transform` - Apply data transformations
-
-### Analysis & Visualization
-- `POST /api/visualize` - Create data visualizations
-- `GET /api/stats` - Get statistical analysis
-- `GET /api/plots/available` - Get available plot types
-
-### Session Management
-- `GET /api/session/<session_id>` - Get session information
-
-## Data Processing Capabilities
-
-### Supported File Formats
-- **CSV**: Comma-separated values with automatic delimiter detection
-- **Excel**: .xlsx and .xls files with multiple sheet support
-- **JSON**: Nested and flat JSON structures
-
-### Data Types Handled
-- Numeric (integers, floats)
-- Text/Strings
-- Dates and timestamps
-- Boolean values
-- Categorical data
-
-### Cleaning Operations
-- Duplicate detection and removal
-- Missing value imputation (mean, median, mode, custom)
-- Outlier detection (IQR, Z-score, Modified Z-score)
-- Data type conversion and validation
-- Text cleaning and normalization
-
-### Statistical Analyses
-- Descriptive statistics (mean, median, std, quartiles)
-- Correlation analysis (Pearson, Spearman, Kendall)
-- Categorical frequency analysis
-- Data quality assessment
-- Outlier detection and reporting
-
-## Browser Compatibility
-
-Alchemist supports all modern web browsers:
-- Chrome 90+
-- Firefox 88+
-- Safari 14+
-- Edge 90+
-
-## Performance Considerations
-
-- **File Size Limit**: Maximum file size is 100MB by default
-- **Memory Usage**: Large datasets are processed in chunks when possible
-- **Session Storage**: Session data is stored locally and on the server
-- **Caching**: Frequently accessed data is cached for better performance
-
-## Troubleshooting
-
-### Common Issues
-
-1. **File Upload Fails**
-   - Check file format (CSV, Excel, JSON only)
-   - Ensure file size is under 100MB
-   - Verify file is not corrupted
-
-2. **Visualizations Not Displaying**
-   - Check browser console for JavaScript errors
-   - Ensure Plotly.js library loads correctly
-   - Verify data contains valid numeric/categorical columns
-
-3. **Slow Performance**
-   - Reduce dataset size through filtering
-   - Use fewer rows per page in table view
-   - Close unnecessary browser tabs
-
-4. **Memory Errors**
-   - Restart the Flask server
-   - Clear browser cache
-   - Use smaller datasets for testing
-
-### Error Messages
-- **"Unsupported file type"**: Upload only CSV, Excel, or JSON files
-- **"File too large"**: Reduce file size under 100MB
-- **"No numeric columns found"**: Ensure dataset contains numeric data for statistical operations
-
-## Development
-
-### Adding New Features
-1. Backend: Add new functions to appropriate modules (`data_handler.py`, `visualization.py`, `stats.py`)
-2. Frontend: Update `app.js` with new UI logic and API calls
-3. Styling: Modify `styles.css` for visual changes
-4. API: Add new endpoints to `app.py`
-
-### Testing
-- Test with various file formats and sizes
-- Verify all cleaning operations work correctly
-- Check visualizations render properly
-- Ensure export functionality maintains data integrity
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request with detailed description
-
-## License
-
-This project is open source and available under the MIT License.
-
-## Support
-
-For issues, questions, or feature requests:
-1. Check the troubleshooting section above
-2. Review the API documentation
-3. Create an issue in the project repository
-4. Contact the development team
+The Flask app serves the frontend. Open **http://localhost:5000** in your browser.
 
 ---
 
-**Alchemist** - Transform your raw data into insights with powerful data cleaning and visualization tools.
+## Usage
+
+### 1. Upload data
+- Click **Select File** or drag and drop a CSV, Excel, or JSON file.
+- After processing, the workspace opens with the table view.
+
+### 2. Work with the table
+- **Sort**: Click a column name for A→Z, or open the column **▼** menu and choose Sort A→Z or Sort Z→A.
+- **Filter**: Open the column **▼** menu → **Filter** → choose operator and value → **Apply**. Or use the sidebar filter and **Apply Filter**.
+- **Search**: Type in the search box; matching is case-insensitive across all columns.
+- **Download current view**: Click **Download current view**, pick format (CSV, Excel, JSON, TSV, HTML). This exports the currently visible data (filtered or full).
+
+### 3. Preview operations
+- Click **Preview** in the sidebar.
+- Select operations (e.g. Remove Duplicates, Remove Empty Rows, Clean Text) and sample size.
+- If you have a filter applied, the preview uses the **filtered** data.
+- Click **Preview** in the modal to see Original vs Preview; use **Download** in that modal to export either side in multiple formats.
+
+### 4. Apply cleaning and export
+- Use **Remove Duplicates**, **Fill Missing**, **Clean Text**, etc. from the sidebar.
+- Use **Download** for the full dataset, or **Download current view** for the current table.
+- **New Session**: Clears state and shows the upload screen again (any unsaved work is lost after you confirm).
+
+---
+
+## API Overview
+
+- `POST /api/upload` – Upload file, create session
+- `GET /api/data/info` – Dataset info
+- `POST /api/download` – Export full data (CSV/Excel/JSON)
+- `POST /api/clean` – Cleaning operations
+- `POST /api/filter` – Apply filters (case-insensitive)
+- `POST /api/preview` – Preview operations (optional `data` = current filtered rows)
+- `POST /api/undo`, `POST /api/redo`, `POST /api/reset`
+- `GET /api/stats`, `POST /api/visualize`, etc.
+
+---
+
+## Behaviour Notes
+
+- **Case-insensitive**: Filter (equals, not equals, contains, not contains) and table search ignore case.
+- **New Session**: Resets app state, clears table and filters, shows upload; next upload gets a new session.
+- **Preview on filter**: When you run Preview with an active filter, the sample is taken from the filtered data.
+
+---
+
+## Troubleshooting
+
+- **Upload fails**: Use CSV, Excel, or JSON; check file size and that the file isn’t corrupted.
+- **Charts not showing**: Check console for errors; ensure Plotly loads and data has suitable columns.
+- **Slow with large data**: Use filters or reduce rows per page.
+
+---
+
+## License
+
+MIT License.
+
+---
+
+**Alchemist** – Clean, transform, and export your data with case-insensitive filters and flexible preview and download options.

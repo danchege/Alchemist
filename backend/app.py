@@ -636,9 +636,10 @@ def preview_operations():
         
         operations = data['operations']
         sample_size = data.get('sample_size', 100)
+        source_data = data.get('data')  # Optional: filtered data from frontend
         
-        # Preview operations
-        preview_result = data_handler.preview_operations(operations, sample_size)
+        # Preview operations (use source_data if provided, e.g. when filter is active)
+        preview_result = data_handler.preview_operations(operations, sample_size, source_data=source_data)
         
         return jsonify(preview_result)
     except Exception as e:

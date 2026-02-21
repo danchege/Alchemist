@@ -13,7 +13,10 @@ class AlchemistApp {
         this.currentPage = 1;
         this.rowsPerPage = 10;
         this.searchTerm = '';
-        
+        this.sortColumn = null;
+        this.sortDirection = 'asc';
+        this.activeColumnDropdown = null;
+
         this.initializeEventListeners();
         this.loadSessionFromStorage();
     }
@@ -89,6 +92,7 @@ class AlchemistApp {
 
         // Workspace actions
         document.getElementById('downloadBtn').addEventListener('click', () => this.showDownloadModal());
+        document.getElementById('downloadCurrentViewBtn').addEventListener('click', () => this.showDownloadCurrentViewModal());
         document.getElementById('resetBtn').addEventListener('click', () => this.resetData());
 
         // Session management
@@ -263,13 +267,134 @@ class AlchemistApp {
         tableHeader.innerHTML = '';
         tableBody.innerHTML = '';
 
-        // Create header
+        // Create header with dropdown
         const headerRow = document.createElement('tr');
         Object.keys(data[0]).forEach(column => {
             const th = document.createElement('th');
-            th.textContent = column;
-            th.style.cursor = 'pointer';
-            th.addEventListener('click', () => this.sortTable(column));
+            th.className = 'data-table-th-with-menu';
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'column-header-wrapper';
+
+            const label = document.createElement('span');
+            label.className = 'column-header-label';
+            label.textContent = column;
+            label.title = column;
+            label.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.sortTable(column, this.sortColumn === column && this.sortDirection === 'asc' ? 'desc' : 'asc');
+            });
+
+            const arrowBtn = document.createElement('button');
+            arrowBtn.type = 'button';
+            arrowBtn.className = 'column-dropdown-trigger';
+            arrowBtn.setAttribute('aria-label', `Options for ${column}`);
+            arrowBtn.setAttribute('data-column', column);
+            arrowBtn.innerHTML = '<i class="fas fa-chevron-down"></i>';
+            arrowBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                console.log('Arrow clicked for column:', column);
+                this.toggleColumnDropdown(e.currentTarget, column);
+            });
+
+            wrapper.appendChild(label);
+            if (this.sortColumn === column) {
+                const sortIcon = document.createElement('i');
+                sortIcon.className = this.sortDirection === 'asc' ? 'fas fa-sort-up column-sort-icon' : 'fas fa-sort-down column-sort-icon';
+                sortIcon.title = this.sortDirection === 'asc' ? 'Sorted ascending' : 'Sorted descending';
+                wrapper.appendChild(sortIcon);
+            }
+            wrapper.appendChild(arrowBtn);
+
+            const dropdownMenu = document.createElement('div');
+            dropdownMenu.className = 'column-dropdown-menu';
+            dropdownMenu.setAttribute('role', 'menu');
+            dropdownMenu.setAttribute('data-column', column);
+            dropdownMenu.innerHTML = `
+                <button type="button" class="column-menu-item" data-action="sort-asc" role="menuitem"><i class="fas fa-sort-alpha-down"></i> Sort A → Z</button>
+                <button type="button" class="column-menu-item" data-action="sort-desc" role="menuitem"><i class="fas fa-sort-alpha-down-alt"></i> Sort Z → A</button>
+                <div class="column-menu-divider"></div>
+                <button type="button" class="column-menu-item column-filter-toggle" data-column="${column}" role="menuitem">
+                    <i class="fas fa-filter"></i> Filter
+                    <i class="fas fa-chevron-right column-filter-chevron"></i>
+                </button>
+                <div class="column-filter-section" data-column="${column}" style="display: none;">
+                    <div class="column-filter-controls">
+                        <select class="column-filter-operator" data-column="${column}">
+                            <option value="equals">Equals</option>
+                            <option value="not_equals">Not Equals</option>
+                            <option value="greater_than">Greater Than</option>
+                            <option value="less_than">Less Than</option>
+                            <option value="contains">Contains</option>
+                            <option value="not_contains">Not Contains</option>
+                        </select>
+                        <input type="text" class="column-filter-value" data-column="${column}" placeholder="Enter value..." />
+                        <div class="column-filter-actions">
+                            <button type="button" class="btn btn-sm btn-primary column-filter-apply" data-column="${column}">Apply</button>
+                            <button type="button" class="btn btn-sm btn-secondary column-filter-clear" data-column="${column}">Clear</button>
+                        </div>
+                    </div>
+                </div>
+                <button type="button" class="column-menu-item" data-action="stats" role="menuitem"><i class="fas fa-chart-bar"></i> Column statistics</button>
+            `;
+            
+            // Handle filter toggle
+            const filterToggle = dropdownMenu.querySelector('.column-filter-toggle');
+            const filterSection = dropdownMenu.querySelector('.column-filter-section');
+            filterToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isExpanded = filterSection.style.display !== 'none';
+                filterSection.style.display = isExpanded ? 'none' : 'block';
+                filterToggle.querySelector('.column-filter-chevron').style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
+                if (!isExpanded) {
+                    filterSection.querySelector('.column-filter-value').focus();
+                }
+            });
+
+            // Handle filter apply
+            const filterApplyBtn = dropdownMenu.querySelector('.column-filter-apply');
+            filterApplyBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const operator = dropdownMenu.querySelector('.column-filter-operator').value;
+                const value = dropdownMenu.querySelector('.column-filter-value').value;
+                if (!value) {
+                    this.showNotification('Please enter a filter value', 'warning');
+                    return;
+                }
+                this.applyColumnFilter(column, operator, value);
+                dropdownMenu.classList.remove('open');
+                this.activeColumnDropdown = null;
+            });
+
+            // Handle filter clear
+            const filterClearBtn = dropdownMenu.querySelector('.column-filter-clear');
+            filterClearBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdownMenu.querySelector('.column-filter-value').value = '';
+                dropdownMenu.querySelector('.column-filter-operator').value = 'equals';
+                this.clearFilters();
+                dropdownMenu.classList.remove('open');
+                this.activeColumnDropdown = null;
+            });
+
+            // Handle other menu items (sort and stats)
+            dropdownMenu.querySelectorAll('.column-menu-item[data-action]').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const action = btn.dataset.action;
+                    // Close dropdown before executing action
+                    const wrapper = btn.closest('.column-header-wrapper');
+                    const menu = wrapper?.querySelector('.column-dropdown-menu');
+                    if (menu) {
+                        menu.classList.remove('open');
+                    }
+                    this.activeColumnDropdown = null;
+                    this.openColumnMenu(column, action);
+                });
+            });
+            wrapper.appendChild(dropdownMenu);
+            th.appendChild(wrapper);
             headerRow.appendChild(th);
         });
         tableHeader.appendChild(headerRow);
@@ -349,22 +474,140 @@ class AlchemistApp {
         pagination.appendChild(nextBtn);
     }
 
-    sortTable(column) {
+    toggleColumnDropdown(triggerElement, column) {
+        // Close any other open dropdowns
+        if (this.activeColumnDropdown && this.activeColumnDropdown !== triggerElement) {
+            const otherMenu = this.activeColumnDropdown.closest('.column-header-wrapper')?.querySelector('.column-dropdown-menu');
+            if (otherMenu) {
+                otherMenu.classList.remove('open');
+            }
+        }
+        
+        // Find the menu - it's a sibling of the trigger within the wrapper
+        const wrapper = triggerElement.closest('.column-header-wrapper');
+        if (!wrapper) {
+            console.error('Wrapper not found for column:', column);
+            return;
+        }
+        
+        const menu = wrapper.querySelector('.column-dropdown-menu');
+        if (!menu) {
+            console.error('Dropdown menu not found for column:', column, 'Wrapper:', wrapper);
+            return;
+        }
+        
+        console.log('Menu found:', menu, 'Current classes:', menu.className);
+        
+        const isOpen = menu.classList.contains('open');
+        console.log('Is open:', isOpen);
+        
+        if (isOpen) {
+            // Close it
+            menu.classList.remove('open');
+            this.activeColumnDropdown = null;
+            console.log('Dropdown closed');
+        } else {
+            // Open it
+            menu.classList.add('open');
+            this.activeColumnDropdown = triggerElement;
+            console.log('Dropdown opened, menu classes:', menu.className);
+            console.log('Menu computed style display:', window.getComputedStyle(menu).display);
+            
+            // Add click handler to close when clicking outside
+            const closeHandler = (e) => {
+                if (!menu.contains(e.target) && 
+                    triggerElement !== e.target && 
+                    !triggerElement.contains(e.target) &&
+                    !wrapper.contains(e.target)) {
+                    menu.classList.remove('open');
+                    document.removeEventListener('click', closeHandler, true);
+                    this.activeColumnDropdown = null;
+                }
+            };
+            // Use setTimeout to avoid immediate closure
+            setTimeout(() => {
+                document.addEventListener('click', closeHandler, true);
+            }, 0);
+        }
+    }
+
+    openColumnMenu(column, action) {
+        // Close the dropdown
+        if (this.activeColumnDropdown) {
+            const wrapper = this.activeColumnDropdown.closest('.column-header-wrapper');
+            const menu = wrapper?.querySelector('.column-dropdown-menu');
+            if (menu) {
+                menu.classList.remove('open');
+            }
+        }
+        this.activeColumnDropdown = null;
+        
+        if (action === 'sort-asc') this.sortTable(column, 'asc');
+        else if (action === 'sort-desc') this.sortTable(column, 'desc');
+        else if (action === 'stats') this.openStatsForColumn(column);
+    }
+
+    async applyColumnFilter(column, operator, value) {
+        try {
+            this.showLoading(true);
+
+            const response = await fetch(`${this.apiBase}/filter`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    filters: [{
+                        column: column,
+                        operator: operator,
+                        value: value
+                    }]
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.filteredData = result.data;
+                this.currentPage = 1;
+                this.renderTable();
+                this.showNotification(`Filter applied: ${column} ${operator} "${value}"`, 'success');
+            } else {
+                throw new Error(result.error);
+            }
+        } catch (error) {
+            this.showNotification(`Failed to apply filter: ${error.message}`, 'error');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    openStatsForColumn(column) {
+        this.switchView('stats');
+        this.loadStatistics();
+        this.showNotification(`Statistics loaded. See "${column}" in the stats panels.`, 'info');
+    }
+
+    sortTable(column, direction = 'asc') {
         const data = this.filteredData || this.currentData;
         if (!data) return;
+
+        this.sortColumn = column;
+        this.sortDirection = direction;
+        const mult = direction === 'desc' ? -1 : 1;
 
         data.sort((a, b) => {
             const aVal = a[column];
             const bVal = b[column];
-            
-            if (aVal === null) return 1;
-            if (bVal === null) return -1;
-            
+
+            if (aVal === null) return 1 * mult;
+            if (bVal === null) return -1 * mult;
+
             if (typeof aVal === 'number' && typeof bVal === 'number') {
-                return aVal - bVal;
+                return (aVal - bVal) * mult;
             }
-            
-            return String(aVal).localeCompare(String(bVal));
+
+            return String(aVal).localeCompare(String(bVal)) * mult;
         });
 
         this.renderTable();
@@ -1025,6 +1268,49 @@ class AlchemistApp {
         container.appendChild(table);
     }
 
+    showDownloadCurrentViewModal() {
+        const data = this.filteredData || this.currentData;
+        if (!data || data.length === 0) {
+            this.showNotification('No data to download. Load a dataset first.', 'warning');
+            return;
+        }
+        const isFiltered = !!this.filteredData;
+        const modalBody = document.getElementById('modalBody');
+        modalBody.innerHTML = `
+            <p class="download-current-view-desc">
+                ${isFiltered
+                    ? `Download the <strong>current table view</strong> (${data.length.toLocaleString()} rows after filter).`
+                    : `Download the full current dataset (${data.length.toLocaleString()} rows).`}
+            </p>
+            <div class="download-format-grid">
+                <button type="button" class="btn btn-success download-current-format" data-format="csv"><i class="fas fa-file-csv"></i> CSV</button>
+                <button type="button" class="btn btn-success download-current-format" data-format="excel"><i class="fas fa-file-excel"></i> Excel</button>
+                <button type="button" class="btn btn-success download-current-format" data-format="json"><i class="fas fa-file-code"></i> JSON</button>
+                <button type="button" class="btn btn-success download-current-format" data-format="tsv"><i class="fas fa-file-alt"></i> TSV</button>
+                <button type="button" class="btn btn-success download-current-format" data-format="html"><i class="fas fa-file-code"></i> HTML</button>
+            </div>
+        `;
+        modalBody.querySelectorAll('.download-current-format').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const format = btn.dataset.format;
+                const dateStr = new Date().toISOString().slice(0, 10);
+                const name = isFiltered ? 'current_view' : 'dataset';
+                let filename = `${name}_${dateStr}.${format}`;
+                if (format === 'excel') filename = `${name}_${dateStr}.xlsx`;
+                switch (format) {
+                    case 'csv': this.downloadDataAsCSV(data, filename); break;
+                    case 'excel': this.downloadDataAsExcel(data, filename); break;
+                    case 'json': this.downloadDataAsJSON(data, filename); break;
+                    case 'tsv': this.downloadDataAsTSV(data, filename); break;
+                    case 'html': this.downloadDataAsHTML(data, filename); break;
+                }
+                this.closeModal();
+            });
+        });
+        this.showModal('Download current table view', () => {}, 'Done');
+        document.getElementById('modalFooter').innerHTML = '<button type="button" class="btn btn-secondary" onclick="app.closeModal()">Close</button>';
+    }
+
     showDownloadModal() {
         console.log('showDownloadModal() called');
         const modalBody = document.getElementById('modalBody');
@@ -1270,17 +1556,66 @@ class AlchemistApp {
     }
 
     newSession() {
-        if (confirm('Start a new session? Any unsaved work will be lost.')) {
-            this.currentData = null;
-            this.currentSession = null;
-            this.filteredData = null;
-            localStorage.removeItem('alchemist_session');
-            
-            document.getElementById('workspaceSection').classList.add('hidden');
-            document.getElementById('uploadSection').classList.remove('hidden');
-            
-            this.showNotification('New session started', 'info');
+        if (!confirm('Start a new session? Any unsaved work will be lost.')) {
+            return;
         }
+        
+        // Clear all data state
+        this.currentData = null;
+        this.currentSession = null;
+        this.filteredData = null;
+        this.currentPage = 1;
+        this.rowsPerPage = 25;
+        this.searchTerm = '';
+        this.sortColumn = null;
+        this.sortDirection = 'asc';
+        this.activeColumnDropdown = null;
+        localStorage.removeItem('alchemist_session');
+
+        // Hide loading overlay and clear any loading states
+        this.showLoading(false);
+        
+        // Close any open modals
+        this.closeModal();
+
+        // Reset upload UI - show upload area, hide progress
+        const uploadProgress = document.getElementById('uploadProgress');
+        const uploadArea = document.getElementById('uploadArea');
+        if (uploadProgress) uploadProgress.classList.add('hidden');
+        if (uploadArea) uploadArea.classList.remove('hidden');
+
+        // Reset file input
+        const fileInput = document.getElementById('fileInput');
+        if (fileInput) fileInput.value = '';
+
+        // Hide workspace, show upload section
+        document.getElementById('workspaceSection').classList.add('hidden');
+        document.getElementById('uploadSection').classList.remove('hidden');
+
+        // Clear search and filter inputs
+        const searchInput = document.getElementById('searchInput');
+        if (searchInput) searchInput.value = '';
+        const filterColumn = document.getElementById('filterColumn');
+        if (filterColumn) filterColumn.innerHTML = '<option value="">Select column...</option>';
+        const filterOperator = document.getElementById('filterOperator');
+        if (filterOperator) filterOperator.value = 'equals';
+        const filterValue = document.getElementById('filterValue');
+        if (filterValue) filterValue.value = '';
+
+        // Clear table display
+        const tableHeader = document.getElementById('tableHeader');
+        const tableBody = document.getElementById('tableBody');
+        const tableInfo = document.getElementById('tableInfo');
+        const tablePagination = document.getElementById('tablePagination');
+        if (tableHeader) tableHeader.innerHTML = '';
+        if (tableBody) tableBody.innerHTML = '';
+        if (tableInfo) tableInfo.textContent = '';
+        if (tablePagination) tablePagination.innerHTML = '';
+
+        // Reset view to table (for next load)
+        this.switchView('table');
+        
+        this.showNotification('New session started. Upload a file to begin.', 'info');
     }
 
     // Utility methods
@@ -1628,6 +1963,16 @@ class AlchemistApp {
 
             const sampleSize = parseInt(document.getElementById('sampleSize').value);
 
+            // Use filtered data if user has applied a filter, so preview reflects current view
+            const dataToPreview = this.filteredData || this.currentData;
+            const payload = {
+                operations: operations,
+                sample_size: sampleSize
+            };
+            if (this.filteredData && this.filteredData.length > 0) {
+                payload.data = this.filteredData.slice(0, sampleSize);
+            }
+
             this.showLoading(true);
 
             const response = await fetch(`${this.apiBase}/preview`, {
@@ -1635,10 +1980,7 @@ class AlchemistApp {
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    operations: operations,
-                    sample_size: sampleSize
-                })
+                body: JSON.stringify(payload)
             });
 
             const result = await response.json();
@@ -1658,12 +2000,64 @@ class AlchemistApp {
     showPreviewResults(result) {
         const modalBody = document.getElementById('modalBody');
 
+        const bindPreviewDownloadButtons = (container, res) => {
+            if (!container) return;
+            container.querySelectorAll('.preview-download-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const [which, format] = btn.dataset.download.split('-');
+                    const data = which === 'original' ? res.original_data : res.preview_data;
+                    if (!data || data.length === 0) {
+                        this.showNotification('No data to download', 'warning');
+                        return;
+                    }
+                    const dateStr = new Date().toISOString().slice(0, 10);
+                    let filename = `preview_${which}_${dateStr}.${format}`;
+                    if (format === 'excel') filename = `preview_${which}_${dateStr}.xlsx`;
+                    switch (format) {
+                        case 'csv': this.downloadDataAsCSV(data, filename); break;
+                        case 'excel': this.downloadDataAsExcel(data, filename); break;
+                        case 'json': this.downloadDataAsJSON(data, filename); break;
+                        case 'tsv': this.downloadDataAsTSV(data, filename); break;
+                        case 'html': this.downloadDataAsHTML(data, filename); break;
+                        default: this.showNotification(`Unsupported format: ${format}`, 'error');
+                    }
+                });
+            });
+        };
+
         let html = `
             <div class="preview-results">
                 <h4>Preview Results</h4>
                 <p><strong>Note:</strong> ${result.note}</p>
                 
-                <h5>Operation Summary:</h5>
+                <div class="preview-download-section">
+                    <h5><i class="fas fa-download"></i> Download preview data</h5>
+                    <p class="preview-download-hint">Download the tables below in your preferred format.</p>
+                    <div class="preview-download-actions preview-download-inline">
+                        <div class="download-group">
+                            <span class="download-group-label">Original (before operations):</span>
+                            <div class="download-buttons">
+                                <button type="button" class="btn btn-sm btn-success preview-download-btn" data-download="original-csv"><i class="fas fa-file-csv"></i> CSV</button>
+                                <button type="button" class="btn btn-sm btn-success preview-download-btn" data-download="original-excel"><i class="fas fa-file-excel"></i> Excel</button>
+                                <button type="button" class="btn btn-sm btn-success preview-download-btn" data-download="original-json"><i class="fas fa-file-code"></i> JSON</button>
+                                <button type="button" class="btn btn-sm btn-success preview-download-btn" data-download="original-tsv"><i class="fas fa-file-alt"></i> TSV</button>
+                                <button type="button" class="btn btn-sm btn-success preview-download-btn" data-download="original-html"><i class="fas fa-file-code"></i> HTML</button>
+                            </div>
+                        </div>
+                        <div class="download-group">
+                            <span class="download-group-label">Preview (after operations):</span>
+                            <div class="download-buttons">
+                                <button type="button" class="btn btn-sm btn-primary preview-download-btn" data-download="preview-csv"><i class="fas fa-file-csv"></i> CSV</button>
+                                <button type="button" class="btn btn-sm btn-primary preview-download-btn" data-download="preview-excel"><i class="fas fa-file-excel"></i> Excel</button>
+                                <button type="button" class="btn btn-sm btn-primary preview-download-btn" data-download="preview-json"><i class="fas fa-file-code"></i> JSON</button>
+                                <button type="button" class="btn btn-sm btn-primary preview-download-btn" data-download="preview-tsv"><i class="fas fa-file-alt"></i> TSV</button>
+                                <button type="button" class="btn btn-sm btn-primary preview-download-btn" data-download="preview-html"><i class="fas fa-file-code"></i> HTML</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <h5>Operation Summary</h5>
                 <ul>
                     ${result.results.map(op => `
                         <li>${op.operation}: ${op.removed ? `Removed ${op.removed} items` : `Affected ${op.affected_rows || op.columns.length} columns`}</li>
@@ -1688,12 +2082,175 @@ class AlchemistApp {
         `;
 
         modalBody.innerHTML = html;
+        bindPreviewDownloadButtons(modalBody, result);
 
-        // Update modal footer
         const modalFooter = document.getElementById('modalFooter');
         modalFooter.innerHTML = `
+            <div class="preview-download-actions">
+                <span class="download-group-label">Download:</span>
+                <div class="download-buttons">
+                    <button type="button" class="btn btn-sm btn-success preview-download-btn" data-download="original-csv">Original CSV</button>
+                    <button type="button" class="btn btn-sm btn-success preview-download-btn" data-download="original-excel">Original Excel</button>
+                    <button type="button" class="btn btn-sm btn-primary preview-download-btn" data-download="preview-csv">Preview CSV</button>
+                    <button type="button" class="btn btn-sm btn-primary preview-download-btn" data-download="preview-excel">Preview Excel</button>
+                    <button type="button" class="btn btn-sm btn-primary preview-download-btn" data-download="preview-json">Preview JSON</button>
+                </div>
+            </div>
             <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Close</button>
         `;
+        bindPreviewDownloadButtons(modalFooter, result);
+    }
+
+    downloadDataAsCSV(data, filename = 'data.csv') {
+        if (!data || data.length === 0) return;
+        const headers = Object.keys(data[0]);
+        const escape = (v) => {
+            const s = String(v ?? '');
+            if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+            return s;
+        };
+        const row = (obj) => headers.map(h => escape(obj[h])).join(',');
+        const csv = [headers.join(','), ...data.map(row)].join('\r\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        this.triggerDownload(blob, filename);
+    }
+
+    downloadDataAsTSV(data, filename = 'data.tsv') {
+        if (!data || data.length === 0) return;
+        const headers = Object.keys(data[0]);
+        const row = (obj) => headers.map(h => String(obj[h] ?? '')).join('\t');
+        const tsv = [headers.join('\t'), ...data.map(row)].join('\r\n');
+        const blob = new Blob([tsv], { type: 'text/tab-separated-values;charset=utf-8;' });
+        this.triggerDownload(blob, filename);
+    }
+
+    downloadDataAsExcel(data, filename = 'data.xlsx') {
+        if (!data || data.length === 0) return;
+        
+        if (typeof XLSX === 'undefined') {
+            this.showNotification('Excel library not loaded. Please refresh the page.', 'error');
+            return;
+        }
+
+        try {
+            const headers = Object.keys(data[0]);
+            const worksheetData = [
+                headers,
+                ...data.map(row => headers.map(h => row[h] ?? ''))
+            ];
+            
+            const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
+            
+            XLSX.writeFile(workbook, filename);
+            this.showNotification(`Downloaded ${filename}`, 'success');
+        } catch (error) {
+            this.showNotification(`Failed to generate Excel file: ${error.message}`, 'error');
+        }
+    }
+
+    downloadDataAsHTML(data, filename = 'data.html') {
+        if (!data || data.length === 0) return;
+        const headers = Object.keys(data[0]);
+        const escapeHtml = (text) => {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        };
+        
+        let html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Export</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-top: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th {
+            background-color: #4a90e2;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        tr:hover {
+            background-color: #f9f9f9;
+        }
+        .meta {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Data Export</h1>
+        <div class="meta">
+            <p>Exported on: ${new Date().toLocaleString()}</p>
+            <p>Total rows: ${data.length}</p>
+            <p>Total columns: ${headers.length}</p>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    ${headers.map(h => `<th>${escapeHtml(h)}</th>`).join('')}
+                </tr>
+            </thead>
+            <tbody>
+                ${data.map(row => `
+                    <tr>
+                        ${headers.map(h => `<td>${escapeHtml(String(row[h] ?? ''))}</td>`).join('')}
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>`;
+        
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8;' });
+        this.triggerDownload(blob, filename);
+    }
+
+    downloadDataAsJSON(data, filename = 'data.json') {
+        if (!data || data.length === 0) return;
+        const json = JSON.stringify(data, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        this.triggerDownload(blob, filename);
+    }
+
+    triggerDownload(blob, filename) {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        this.showNotification(`Downloaded ${filename}`, 'success');
     }
 
     createPreviewTable(data) {

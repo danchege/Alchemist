@@ -284,24 +284,35 @@ class DataHandler:
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
-    def preview_operations(self, operations: List[Dict[str, Any]], sample_size: int = 100) -> Dict[str, Any]:
+    def preview_operations(self, operations: List[Dict[str, Any]], sample_size: int = 100,
+                          source_data: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
-        Preview the effect of operations on a sample of data without applying them
+        Preview the effect of operations on a sample of data without applying them.
+        If source_data is provided (e.g. filtered data from frontend), use that as the base.
         
         Args:
             operations: List of operations to preview
             sample_size: Number of rows to include in preview
+            source_data: Optional list of row dicts to use as base (e.g. current filter). If provided, sample_size limits this data.
             
         Returns:
             Dict containing preview data and operation results
         """
         try:
-            if self.data is None:
+            if source_data is not None and len(source_data) > 0:
+                # Use provided data (e.g. filtered view from frontend)
+                df = pd.DataFrame(source_data)
+                preview_data = df.head(sample_size).copy()
+                original_preview = preview_data.copy()
+                note_suffix = f' (based on current filter: {len(source_data)} rows, showing {len(preview_data)})'
+            elif self.data is not None:
+                # Use session data
+                preview_data = self.data.head(sample_size).copy()
+                original_preview = preview_data.copy()
+                note_suffix = f' (first {sample_size} rows of full dataset)'
+            else:
                 return {'success': False, 'error': 'No data loaded'}
             
-            # Create a copy of the data for preview
-            preview_data = self.data.head(sample_size).copy()
-            original_preview = preview_data.copy()
             results = []
             
             for operation in operations:
@@ -394,7 +405,7 @@ class DataHandler:
                 'preview_data': replace_nan_with_none(preview_dict),
                 'results': results,
                 'sample_size': len(preview_data),
-                'note': f'Preview showing first {sample_size} rows only'
+                'note': f'Preview showing first {sample_size} rows only' + note_suffix
             }
             
         except Exception as e:
@@ -563,22 +574,27 @@ class DataHandler:
                 column = filter_condition.get('column')
                 operator = filter_condition.get('operator')
                 value = filter_condition.get('value')
-                
+                str_value = str(value).strip()
+
                 if operator == 'equals':
-                    filtered_data = filtered_data[filtered_data[column] == value]
+                    # Case-insensitive comparison for string columns
+                    col = filtered_data[column].astype(str)
+                    filtered_data = filtered_data[col.str.lower() == str_value.lower()]
                 elif operator == 'not_equals':
-                    filtered_data = filtered_data[filtered_data[column] != value]
+                    col = filtered_data[column].astype(str)
+                    filtered_data = filtered_data[col.str.lower() != str_value.lower()]
                 elif operator == 'greater_than':
                     filtered_data = filtered_data[filtered_data[column] > value]
                 elif operator == 'less_than':
                     filtered_data = filtered_data[filtered_data[column] < value]
                 elif operator == 'contains':
+                    # Case-insensitive substring match
                     filtered_data = filtered_data[
-                        filtered_data[column].astype(str).str.contains(str(value), na=False)
+                        filtered_data[column].astype(str).str.lower().str.contains(str_value.lower(), na=False)
                     ]
                 elif operator == 'not_contains':
                     filtered_data = filtered_data[
-                        ~filtered_data[column].astype(str).str.contains(str(value), na=False)
+                        ~filtered_data[column].astype(str).str.lower().str.contains(str_value.lower(), na=False)
                     ]
                     
             # Convert DataFrame to dict and replace NaN with None for JSON serialization
