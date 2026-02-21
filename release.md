@@ -16,42 +16,15 @@ It runs locally and works offline.
 - On startup, executable starts: local server and opens your browser to: correct localhost URL
 
 ## Install (Linux)
-1. Download: latest release archive
 ```bash
+# Download the fresh release
 curl -L https://github.com/danchege/Alchemist/releases/latest/download/Alchemist-linux-x86_64.tar.gz -o Alchemist-linux-x86_64.tar.gz
-```
 
-2. Extract: archive
-```bash
+# Extract it
 tar -xzf Alchemist-linux-x86_64.tar.gz
-```
 
-3. Install: globally
-```bash
+# Install globally
 cd Alchemist-linux-x86_64
 sudo ./install.sh
-```
 
-4. Run
-```bash
-Alchemist
-```
 
-## Useful environment variables
-```bash
-# Change port
-PORT=5001 Alchemist
-
-# Disable browser auto-open
-ALCH_OPEN_BROWSER=0 Alchemist
-```
-
-## Verify download (optional)
-```bash
-sha256sum -c Alchemist-linux-x86_64.tar.gz.sha256
-```
-
-## Notes
-- First run may take a moment while Matplotlib builds its font cache.
-- This is a PyInstaller onedir bundle (the folder contains required libraries).
-```
