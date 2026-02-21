@@ -11,6 +11,7 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+release/
 downloads/
 eggs/
 .eggs/
@@ -189,6 +190,8 @@ Thumbs.db
 data/uploads/
 data/temp/
 data/sessions/
+*.tar.gz
+*.sha256
 *.csv
 *.xlsx
 *.xls

@@ -11,6 +11,8 @@ import os
 import sys
 import json
 import io
+import threading
+import webbrowser
 from datetime import datetime
 import traceback
 
@@ -772,4 +774,11 @@ if __name__ == '__main__':
     print(f"Upload folder: {app.config['UPLOAD_FOLDER']}")
     print(f"Session folder: {app.config['SESSION_FOLDER']}")
     print(f"Server running on http://0.0.0.0:{port}")
+
+    open_browser = os.environ.get('ALCH_OPEN_BROWSER', '1').lower() not in {'0', 'false', 'no'}
+    is_reloader_child = os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
+    if open_browser and not is_reloader_child:
+        url = f"http://127.0.0.1:{port}"
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+
     app.run(debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true', host='0.0.0.0', port=port)

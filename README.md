@@ -127,6 +127,12 @@ chmod +x ./alchemist.sh
 
 Then open **http://127.0.0.1:5000**.
 
+By default, Alchemist will also try to open your browser automatically. To disable this behavior:
+
+```bash
+ALCH_OPEN_BROWSER=0 ./alchemist.sh run
+```
+
 To build an offline executable (PyInstaller):
 
 ```bash
@@ -134,6 +140,71 @@ To build an offline executable (PyInstaller):
 ```
 
 The executable will be in `dist/Alchemist/`.
+
+### Run the Linux executable (release build)
+
+If you downloaded a prebuilt Linux release archive (for example `Alchemist-linux-x86_64.tar.gz`), extract it and run the bundled executable:
+
+```bash
+tar -xzf Alchemist-linux-x86_64.tar.gz
+cd Alchemist
+./Alchemist
+```
+
+It will start the local server and open your browser to the correct `localhost` URL.
+
+Useful environment variables:
+
+```bash
+# Change port
+PORT=5001 ./Alchemist
+
+# Disable browser auto-open
+ALCH_OPEN_BROWSER=0 ./Alchemist
+```
+
+### 📦 Install (Linux)
+
+1️⃣ Download the latest release
+
+```bash
+curl -L https://github.com/danchege/Alchemist/releases/latest/download/Alchemist-linux-x86_64.tar.gz -o Alchemist-linux-x86_64.tar.gz
+```
+
+2️⃣ Extract the archive
+
+```bash
+tar -xzf Alchemist-linux-x86_64.tar.gz
+```
+
+3️⃣ Install globally
+
+```bash
+cd Alchemist-linux-x86_64
+sudo ./install.sh
+```
+
+Manual install (alternative):
+
+```bash
+sudo mkdir -p /opt/alchemist
+sudo rm -rf /opt/alchemist/Alchemist-linux-x86_64
+sudo mv Alchemist-linux-x86_64 /opt/alchemist/
+sudo ln -sf /opt/alchemist/Alchemist-linux-x86_64/Alchemist /usr/local/bin/Alchemist
+```
+
+4️⃣ Run
+
+```bash
+Alchemist
+```
+
+Uninstall:
+
+```bash
+cd /opt/alchemist/Alchemist-linux-x86_64
+sudo ./uninstall.sh
+```
 
 ### Option 3: Manual setup (create venv in `backend/`)
 
