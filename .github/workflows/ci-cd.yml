@@ -27,13 +27,3 @@ jobs:
       - name: Sanity import Flask app
         working-directory: backend
         run: python -c "import app; assert hasattr(app, 'app')"
-
-  render-deploy:
-    needs: backend-ci
-    if: ${{ github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Trigger Render deploy hook
-        if: ${{ secrets.RENDER_DEPLOY_HOOK_URL != '' }}
-        run: curl -fsSL -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
