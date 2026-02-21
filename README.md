@@ -40,7 +40,7 @@ Backend dependencies (see `backend/requirements.txt`):
 ## Features
 
 ### Data Upload & Management
-- **Multiple format support**: CSV, Excel (.xlsx, .xls), JSON, and **SQLite** (.db, .sqlite, .sqlite3)
+- **Multiple format support**: CSV, Excel (.xlsx, .xls), JSON, **SQLite** (.db, .sqlite, .sqlite3), and **SQL dumps** (.sql)
 - **Drag & drop**: File upload with progress
 - **Data preview**: Instant preview and metadata after upload
 - **Session management**: Persistent sessions; **New Session** clears state and returns to upload screen
@@ -110,12 +110,13 @@ Alchemist/
 
 ## Installation & Setup
 
-### Prerequisites
-- Python 3.8+
-- pip
-- Modern browser (Chrome, Firefox, Safari, Edge)
+### Option 1: Use the online demo
 
-### Run using `alchemist.sh` (recommended)
+Open:
+
+https://alchemist-6qfo.onrender.com/
+
+### Option 2: Run using `alchemist.sh` (recommended)
 
 From the project root:
 
@@ -134,18 +135,20 @@ To build an offline executable (PyInstaller):
 
 The executable will be in `dist/Alchemist/`.
 
-### Backend
+### Option 3: Manual setup (create venv in `backend/`)
 
-1. Go to the backend directory:
+1. Go to the backend directory (all manual commands below run from here):
    ```bash
    cd Alchemist/backend
    ```
 
-2. (Optional) Create and activate a virtual environment:
+2. Create and activate a virtual environment in the `backend/` folder:
    ```bash
-   python -m venv venv
-   # Windows: venv\Scripts\activate
-   # macOS/Linux: source venv/bin/activate
+   python -m venv .venv
+   # Linux/macOS:
+   source .venv/bin/activate
+   # Windows (PowerShell):
+   .venv\Scripts\Activate.ps1
    ```
 
 3. Install dependencies and run:
@@ -165,7 +168,7 @@ The Flask app serves the frontend. Open **http://localhost:5000** in your browse
 ## Usage
 
 ### 1. Upload data
-- Click **Select File** or drag and drop a CSV, Excel, JSON, or SQLite (.db) file.
+- Click **Select File** or drag and drop a CSV, Excel, JSON, SQLite (.db/.sqlite), or SQL dump (.sql) file.
 - After processing, the workspace opens with the table view.
 
 ### 2. Work with the table

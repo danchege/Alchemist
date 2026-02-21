@@ -118,11 +118,11 @@ class AlchemistApp {
         if (!file) return;
 
         const validTypes = ['text/csv', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel', 'application/json'];
-        const validExtensions = ['.csv', '.xlsx', '.xls', '.json'];
+        const validExtensions = ['.csv', '.xlsx', '.xls', '.json', '.db', '.sqlite', '.sqlite3', '.sql'];
         
         const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
         if (!validExtensions.includes(fileExtension)) {
-            this.showNotification('Please upload a CSV, Excel, or JSON file', 'error');
+            this.showNotification('Please upload a CSV, Excel, JSON, SQLite (.db/.sqlite), or SQL (.sql) file', 'error');
             return;
         }
 

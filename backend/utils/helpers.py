@@ -83,6 +83,8 @@ def get_file_type(file_content: bytes, filename: str) -> str:
         return 'json'
     elif ext in ['.db', '.sqlite', '.sqlite3']:
         return 'sqlite'
+    elif ext in ['.sql']:
+        return 'sql'
     
     # Check MIME type
     mime_type, _ = mimetypes.guess_type(filename)

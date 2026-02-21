@@ -101,6 +101,38 @@ class DataHandler:
                         os.unlink(tmp_path)
                     except OSError:
                         pass
+            elif file_type == 'sql':
+                # SQL dump: execute script into a temporary SQLite database, then load the first table
+                sql_script = file_content.decode('utf-8', errors='replace')
+                with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
+                    tmp_path = tmp.name
+                try:
+                    conn = sqlite3.connect(tmp_path)
+                    try:
+                        conn.executescript(sql_script)
+                        conn.commit()
+                    except Exception as e:
+                        return {'success': False, 'error': f'Failed to import SQL dump: {str(e)}'}
+
+                    table_names = pd.read_sql_query(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+                        conn
+                    )
+                    if table_names is None or len(table_names) == 0:
+                        return {'success': False, 'error': 'No tables found after importing the SQL dump'}
+
+                    first_table = table_names['name'].iloc[0]
+                    self.data = pd.read_sql_query(f'SELECT * FROM "{first_table}"', conn)
+                    self._last_sqlite_table = first_table
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
             else:
                 raise ValueError(f"Unsupported file type: {file_type}")
                 
