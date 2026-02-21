@@ -10,6 +10,8 @@ https://alchemist-6qfo.onrender.com/
 
 You can use the hosted online version at the link above, or run it locally using `./alchemist.sh` (see Installation & Setup).
 
+To experience the full power of Alchemist, it’s advisable to run it locally. The online demo is hosted on Render’s free tier, so not all capabilities may be available.
+
 ## Technology
 
 - **Backend**: Python (Flask)
