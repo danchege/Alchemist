@@ -16,6 +16,9 @@ class AlchemistApp {
         this.sortColumn = null;
         this.sortDirection = 'asc';
         this.activeColumnDropdown = null;
+        this.viewHistory = [];
+        this.viewRedoStack = [];
+        this.maxViewHistory = 30;
 
         this.initializeEventListeners();
         this.loadSessionFromStorage();
@@ -73,6 +76,10 @@ class AlchemistApp {
         // Visualizations
         document.getElementById('plotType').addEventListener('change', () => this.updatePlotParameters());
         document.getElementById('createPlotBtn').addEventListener('click', () => this.createPlot());
+
+        // View undo/redo (filter & sort)
+        document.getElementById('viewUndoBtn').addEventListener('click', () => this.viewUndo());
+        document.getElementById('viewRedoBtn').addEventListener('click', () => this.viewRedo());
 
         // Table controls
         document.getElementById('searchInput').addEventListener('input', (e) => {
@@ -211,7 +218,11 @@ class AlchemistApp {
         document.getElementById('workspaceSection').classList.remove('hidden');
 
         // Update dataset info
-        document.getElementById('datasetTitle').textContent = data.data_info.filename || 'Dataset';
+        const tableName = data.data_info.sqlite_table;
+        const title = data.data_info.filename || 'Dataset';
+        document.getElementById('datasetTitle').textContent = tableName
+            ? `${title} (table: ${tableName})`
+            : title;
         document.getElementById('datasetSize').textContent = `${data.data_info.shape[0].toLocaleString()} rows × ${data.data_info.shape[1]} columns`;
 
         // Update column selectors
@@ -220,6 +231,10 @@ class AlchemistApp {
         // Show table view
         this.switchView('table');
         this.renderTable();
+        this.updateViewUndoRedoButtons();
+        
+        // Load operation history
+        this.loadOperationHistory();
     }
 
     updateColumnSelectors(columns) {
@@ -548,37 +563,20 @@ class AlchemistApp {
     }
 
     async applyColumnFilter(column, operator, value) {
+        this.saveViewStateToHistory();
         try {
-            this.showLoading(true);
-
-            const response = await fetch(`${this.apiBase}/filter`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    filters: [{
-                        column: column,
-                        operator: operator,
-                        value: value
-                    }]
-                })
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                this.filteredData = result.data;
-                this.currentPage = 1;
-                this.renderTable();
-                this.showNotification(`Filter applied: ${column} ${operator} "${value}"`, 'success');
-            } else {
-                throw new Error(result.error);
-            }
+            await this.applyFilterInternal(column, operator, value);
+            this.currentPage = 1;
+            document.getElementById('filterColumn').value = column;
+            document.getElementById('filterOperator').value = operator;
+            document.getElementById('filterValue').value = value;
+            this.renderTable();
+            this.updateViewUndoRedoButtons();
+            this.showNotification(`Filter applied: ${column} ${operator} "${value}"`, 'success');
         } catch (error) {
+            this.viewHistory.pop();
+            this.updateViewUndoRedoButtons();
             this.showNotification(`Failed to apply filter: ${error.message}`, 'error');
-        } finally {
-            this.showLoading(false);
         }
     }
 
@@ -588,9 +586,13 @@ class AlchemistApp {
         this.showNotification(`Statistics loaded. See "${column}" in the stats panels.`, 'info');
     }
 
-    sortTable(column, direction = 'asc') {
+    sortTable(column, direction = 'asc', skipViewHistory = false) {
         const data = this.filteredData || this.currentData;
         if (!data) return;
+
+        if (!skipViewHistory) {
+            this.saveViewStateToHistory();
+        }
 
         this.sortColumn = column;
         this.sortDirection = direction;
@@ -611,6 +613,7 @@ class AlchemistApp {
         });
 
         this.renderTable();
+        this.updateViewUndoRedoButtons();
     }
 
     async removeDuplicates() {
@@ -634,6 +637,7 @@ class AlchemistApp {
                 this.currentData = result.data;
                 this.filteredData = null;
                 this.renderTable();
+                this.loadOperationHistory();
                 this.showNotification('Duplicates removed successfully', 'success');
             } else {
                 throw new Error(result.error);
@@ -716,6 +720,7 @@ class AlchemistApp {
                 this.currentData = result.data;
                 this.filteredData = null;
                 this.renderTable();
+                this.loadOperationHistory();
                 this.showNotification('Missing values filled successfully', 'success');
                 this.closeModal();
             } else {
@@ -786,6 +791,7 @@ class AlchemistApp {
                 this.currentData = result.data;
                 this.filteredData = null;
                 this.renderTable();
+                this.loadOperationHistory();
                 this.showNotification('Outliers removed successfully', 'success');
                 this.closeModal();
             } else {
@@ -793,6 +799,103 @@ class AlchemistApp {
             }
         } catch (error) {
             this.showNotification(`Failed to remove outliers: ${error.message}`, 'error');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    getViewState() {
+        const filterColumn = document.getElementById('filterColumn');
+        const filterOperator = document.getElementById('filterOperator');
+        const filterValue = document.getElementById('filterValue');
+        const hasFilter = this.filteredData !== null && filterColumn && filterColumn.value && filterValue && filterValue.value;
+        return {
+            filter: hasFilter
+                ? {
+                    column: filterColumn.value,
+                    operator: filterOperator ? filterOperator.value : 'equals',
+                    value: filterValue.value
+                }
+                : null,
+            sortColumn: this.sortColumn,
+            sortDirection: this.sortDirection
+        };
+    }
+
+    saveViewStateToHistory() {
+        const state = this.getViewState();
+        this.viewHistory.push(state);
+        if (this.viewHistory.length > this.maxViewHistory) {
+            this.viewHistory.shift();
+        }
+        this.viewRedoStack = [];
+        this.updateViewUndoRedoButtons();
+    }
+
+    updateViewUndoRedoButtons() {
+        const undoBtn = document.getElementById('viewUndoBtn');
+        const redoBtn = document.getElementById('viewRedoBtn');
+        if (undoBtn) undoBtn.disabled = this.viewHistory.length === 0;
+        if (redoBtn) redoBtn.disabled = this.viewRedoStack.length === 0;
+    }
+
+    async restoreViewState(state) {
+        const filterColumn = document.getElementById('filterColumn');
+        const filterOperator = document.getElementById('filterOperator');
+        const filterValue = document.getElementById('filterValue');
+        if (state.filter) {
+            if (filterColumn) filterColumn.value = state.filter.column;
+            if (filterOperator) filterOperator.value = state.filter.operator;
+            if (filterValue) filterValue.value = state.filter.value;
+            await this.applyFilterInternal(state.filter.column, state.filter.operator, state.filter.value);
+        } else {
+            this.filteredData = null;
+            this.currentPage = 1;
+            if (filterColumn) filterColumn.value = '';
+            if (filterOperator) filterOperator.value = 'equals';
+            if (filterValue) filterValue.value = '';
+        }
+        this.sortColumn = state.sortColumn;
+        this.sortDirection = state.sortDirection || 'asc';
+        const data = this.filteredData || this.currentData;
+        if (data && this.sortColumn) {
+            const mult = this.sortDirection === 'desc' ? -1 : 1;
+            data.sort((a, b) => {
+                const aVal = a[this.sortColumn];
+                const bVal = b[this.sortColumn];
+                if (aVal === null) return 1 * mult;
+                if (bVal === null) return -1 * mult;
+                if (typeof aVal === 'number' && typeof bVal === 'number') {
+                    return (aVal - bVal) * mult;
+                }
+                return String(aVal).localeCompare(String(bVal)) * mult;
+            });
+        }
+        this.renderTable();
+        this.updateViewUndoRedoButtons();
+    }
+
+    async viewUndo() {
+        if (this.viewHistory.length === 0) return;
+        const state = this.viewHistory.pop();
+        this.viewRedoStack.push(this.getViewState());
+        this.showLoading(true);
+        try {
+            await this.restoreViewState(state);
+            this.showNotification('View change undone', 'info');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    async viewRedo() {
+        if (this.viewRedoStack.length === 0) return;
+        const state = this.viewRedoStack.pop();
+        this.viewHistory.push(this.getViewState());
+        this.showLoading(true);
+        try {
+            await this.restoreViewState(state);
+            this.showNotification('View change redone', 'info');
         } finally {
             this.showLoading(false);
         }
@@ -808,9 +911,24 @@ class AlchemistApp {
             return;
         }
 
-        try {
-            this.showLoading(true);
+        this.saveViewStateToHistory();
 
+        try {
+            await this.applyFilterInternal(column, operator, value);
+            this.currentPage = 1;
+            this.renderTable();
+            this.updateViewUndoRedoButtons();
+            this.showNotification('Filter applied successfully', 'success');
+        } catch (error) {
+            this.viewHistory.pop(); // remove the state we just pushed
+            this.updateViewUndoRedoButtons();
+            this.showNotification(`Failed to apply filter: ${error.message}`, 'error');
+        }
+    }
+
+    async applyFilterInternal(column, operator, value) {
+        this.showLoading(true);
+        try {
             const response = await fetch(`${this.apiBase}/filter`, {
                 method: 'POST',
                 headers: {
@@ -829,26 +947,23 @@ class AlchemistApp {
 
             if (result.success) {
                 this.filteredData = result.data;
-                this.currentPage = 1;
-                this.renderTable();
-                this.showNotification('Filter applied successfully', 'success');
             } else {
                 throw new Error(result.error);
             }
-        } catch (error) {
-            this.showNotification(`Failed to apply filter: ${error.message}`, 'error');
         } finally {
             this.showLoading(false);
         }
     }
 
     clearFilters() {
+        this.saveViewStateToHistory();
         this.filteredData = null;
         this.currentPage = 1;
         document.getElementById('filterColumn').value = '';
         document.getElementById('filterOperator').value = 'equals';
         document.getElementById('filterValue').value = '';
         this.renderTable();
+        this.updateViewUndoRedoButtons();
         this.showNotification('Filters cleared', 'info');
     }
 
@@ -1288,6 +1403,7 @@ class AlchemistApp {
                 <button type="button" class="btn btn-success download-current-format" data-format="json"><i class="fas fa-file-code"></i> JSON</button>
                 <button type="button" class="btn btn-success download-current-format" data-format="tsv"><i class="fas fa-file-alt"></i> TSV</button>
                 <button type="button" class="btn btn-success download-current-format" data-format="html"><i class="fas fa-file-code"></i> HTML</button>
+                <button type="button" class="btn btn-success download-current-format" data-format="sql"><i class="fas fa-database"></i> SQL</button>
             </div>
         `;
         modalBody.querySelectorAll('.download-current-format').forEach(btn => {
@@ -1295,14 +1411,14 @@ class AlchemistApp {
                 const format = btn.dataset.format;
                 const dateStr = new Date().toISOString().slice(0, 10);
                 const name = isFiltered ? 'current_view' : 'dataset';
-                let filename = `${name}_${dateStr}.${format}`;
-                if (format === 'excel') filename = `${name}_${dateStr}.xlsx`;
+                let filename = `${name}_${dateStr}.${format === 'excel' ? 'xlsx' : format === 'sql' ? 'sql' : format}`;
                 switch (format) {
                     case 'csv': this.downloadDataAsCSV(data, filename); break;
                     case 'excel': this.downloadDataAsExcel(data, filename); break;
                     case 'json': this.downloadDataAsJSON(data, filename); break;
                     case 'tsv': this.downloadDataAsTSV(data, filename); break;
                     case 'html': this.downloadDataAsHTML(data, filename); break;
+                    case 'sql': this.downloadDataAsSQL(data, filename, name); break;
                 }
                 this.closeModal();
             });
@@ -1321,6 +1437,9 @@ class AlchemistApp {
                     <option value="csv">CSV</option>
                     <option value="excel">Excel</option>
                     <option value="json">JSON</option>
+                    <option value="tsv">TSV</option>
+                    <option value="html">HTML</option>
+                    <option value="sql">SQL</option>
                 </select>
             </div>
             <div class="form-group">
@@ -1361,6 +1480,30 @@ class AlchemistApp {
             let filename = filenameInput.value.trim();
             
             console.log('Download parameters:', { format, filename });
+
+            // Handle TSV, HTML, and SQL formats client-side (not supported by backend)
+            if (format === 'tsv' || format === 'html' || format === 'sql') {
+                const data = this.filteredData || this.currentData;
+                if (!data || data.length === 0) {
+                    throw new Error('No data to download');
+                }
+                const dateStr = new Date().toISOString().slice(0, 10);
+                if (!filename) {
+                    filename = `cleaned_data_${dateStr}.${format === 'sql' ? 'sql' : format}`;
+                } else if (!filename.match(/\.(tsv|html|sql)$/i)) {
+                    filename = filename + (format === 'tsv' ? '.tsv' : format === 'sql' ? '.sql' : '.html');
+                }
+                if (format === 'tsv') {
+                    this.downloadDataAsTSV(data, filename);
+                } else if (format === 'sql') {
+                    const tableName = (filenameInput.value.trim() || 'exported_data').replace(/[^a-zA-Z0-9_]/g, '_') || 'exported_data';
+                    this.downloadDataAsSQL(data, filename, tableName);
+                } else {
+                    this.downloadDataAsHTML(data, filename);
+                }
+                this.closeModal();
+                return;
+            }
 
             // Add file extension if not provided
             if (filename && !filename.match(/\.(csv|xlsx|json)$/i)) {
@@ -1570,6 +1713,8 @@ class AlchemistApp {
         this.sortColumn = null;
         this.sortDirection = 'asc';
         this.activeColumnDropdown = null;
+        this.viewHistory = [];
+        this.viewRedoStack = [];
         localStorage.removeItem('alchemist_session');
 
         // Hide loading overlay and clear any loading states
@@ -1806,6 +1951,7 @@ class AlchemistApp {
                 this.currentData = result.data;
                 this.filteredData = null;
                 this.renderTable();
+                this.loadOperationHistory();
                 this.showNotification('Text cleaning completed successfully', 'success');
                 this.closeModal();
             } else {
@@ -1864,6 +2010,7 @@ class AlchemistApp {
                 this.currentData = result.data;
                 this.filteredData = null;
                 this.renderTable();
+                this.loadOperationHistory();
                 this.showNotification(`Empty ${target} removed successfully`, 'success');
                 this.closeModal();
             } else {
@@ -2011,14 +2158,14 @@ class AlchemistApp {
                         return;
                     }
                     const dateStr = new Date().toISOString().slice(0, 10);
-                    let filename = `preview_${which}_${dateStr}.${format}`;
-                    if (format === 'excel') filename = `preview_${which}_${dateStr}.xlsx`;
+                    let filename = `preview_${which}_${dateStr}.${format === 'excel' ? 'xlsx' : format === 'sql' ? 'sql' : format}`;
                     switch (format) {
                         case 'csv': this.downloadDataAsCSV(data, filename); break;
                         case 'excel': this.downloadDataAsExcel(data, filename); break;
                         case 'json': this.downloadDataAsJSON(data, filename); break;
                         case 'tsv': this.downloadDataAsTSV(data, filename); break;
                         case 'html': this.downloadDataAsHTML(data, filename); break;
+                        case 'sql': this.downloadDataAsSQL(data, filename, `preview_${which}`); break;
                         default: this.showNotification(`Unsupported format: ${format}`, 'error');
                     }
                 });
@@ -2027,7 +2174,17 @@ class AlchemistApp {
 
         let html = `
             <div class="preview-results">
-                <h4>Preview Results</h4>
+                <div class="preview-header-actions">
+                    <h4>Preview Results</h4>
+                    <div class="preview-undo-redo">
+                        <button type="button" class="btn btn-sm btn-outline preview-undo-btn" id="previewUndoBtn" disabled title="Undo last operation">
+                            <i class="fas fa-undo"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline preview-redo-btn" id="previewRedoBtn" disabled title="Redo last undone operation">
+                            <i class="fas fa-redo"></i>
+                        </button>
+                    </div>
+                </div>
                 <p><strong>Note:</strong> ${result.note}</p>
                 
                 <div class="preview-download-section">
@@ -2042,6 +2199,7 @@ class AlchemistApp {
                                 <button type="button" class="btn btn-sm btn-success preview-download-btn" data-download="original-json"><i class="fas fa-file-code"></i> JSON</button>
                                 <button type="button" class="btn btn-sm btn-success preview-download-btn" data-download="original-tsv"><i class="fas fa-file-alt"></i> TSV</button>
                                 <button type="button" class="btn btn-sm btn-success preview-download-btn" data-download="original-html"><i class="fas fa-file-code"></i> HTML</button>
+                                <button type="button" class="btn btn-sm btn-success preview-download-btn" data-download="original-sql"><i class="fas fa-database"></i> SQL</button>
                             </div>
                         </div>
                         <div class="download-group">
@@ -2052,6 +2210,7 @@ class AlchemistApp {
                                 <button type="button" class="btn btn-sm btn-primary preview-download-btn" data-download="preview-json"><i class="fas fa-file-code"></i> JSON</button>
                                 <button type="button" class="btn btn-sm btn-primary preview-download-btn" data-download="preview-tsv"><i class="fas fa-file-alt"></i> TSV</button>
                                 <button type="button" class="btn btn-sm btn-primary preview-download-btn" data-download="preview-html"><i class="fas fa-file-code"></i> HTML</button>
+                                <button type="button" class="btn btn-sm btn-primary preview-download-btn" data-download="preview-sql"><i class="fas fa-database"></i> SQL</button>
                             </div>
                         </div>
                     </div>
@@ -2084,6 +2243,38 @@ class AlchemistApp {
         modalBody.innerHTML = html;
         bindPreviewDownloadButtons(modalBody, result);
 
+        // Setup undo/redo buttons in preview modal
+        const previewUndoBtn = document.getElementById('previewUndoBtn');
+        const previewRedoBtn = document.getElementById('previewRedoBtn');
+        if (previewUndoBtn) {
+            previewUndoBtn.addEventListener('click', async () => {
+                await this.undo();
+                // Reload preview if modal is still open
+                if (!document.getElementById('modalOverlay').classList.contains('hidden')) {
+                    // Optionally refresh preview or just close modal
+                    this.closeModal();
+                }
+            });
+        }
+        if (previewRedoBtn) {
+            previewRedoBtn.addEventListener('click', async () => {
+                await this.redo();
+                if (!document.getElementById('modalOverlay').classList.contains('hidden')) {
+                    this.closeModal();
+                }
+            });
+        }
+        // Update button states
+        this.loadOperationHistory().then(() => {
+            const historyResponse = fetch(`${this.apiBase}/history`).then(r => r.json());
+            historyResponse.then(historyResult => {
+                if (historyResult.success) {
+                    if (previewUndoBtn) previewUndoBtn.disabled = !historyResult.can_undo;
+                    if (previewRedoBtn) previewRedoBtn.disabled = !historyResult.can_redo;
+                }
+            }).catch(() => {});
+        });
+
         const modalFooter = document.getElementById('modalFooter');
         modalFooter.innerHTML = `
             <div class="preview-download-actions">
@@ -2094,6 +2285,7 @@ class AlchemistApp {
                     <button type="button" class="btn btn-sm btn-primary preview-download-btn" data-download="preview-csv">Preview CSV</button>
                     <button type="button" class="btn btn-sm btn-primary preview-download-btn" data-download="preview-excel">Preview Excel</button>
                     <button type="button" class="btn btn-sm btn-primary preview-download-btn" data-download="preview-json">Preview JSON</button>
+                    <button type="button" class="btn btn-sm btn-primary preview-download-btn" data-download="preview-sql">Preview SQL</button>
                 </div>
             </div>
             <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Close</button>
@@ -2121,6 +2313,26 @@ class AlchemistApp {
         const row = (obj) => headers.map(h => String(obj[h] ?? '')).join('\t');
         const tsv = [headers.join('\t'), ...data.map(row)].join('\r\n');
         const blob = new Blob([tsv], { type: 'text/tab-separated-values;charset=utf-8;' });
+        this.triggerDownload(blob, filename);
+    }
+
+    downloadDataAsSQL(data, filename = 'data.sql', tableName = 'exported_data') {
+        if (!data || data.length === 0) return;
+        const safeName = (s) => String(s).replace(/[^a-zA-Z0-9_]/g, '_') || 'col';
+        const escape = (v) => {
+            if (v === null || v === undefined) return 'NULL';
+            const s = String(v);
+            return "'" + s.replace(/'/g, "''") + "'";
+        };
+        const headers = Object.keys(data[0]);
+        const safeHeaders = headers.map((h, i) => safeName(h) || 'col_' + i);
+        const createTable = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n  ${safeHeaders.map((h, i) => `"${h}" TEXT`).join(',\n  ')}\n);\n\n`;
+        const insertLines = data.map(row => {
+            const values = headers.map(h => escape(row[h]));
+            return `INSERT INTO "${tableName}" (${safeHeaders.map(h => `"${h}"`).join(', ')}) VALUES (${values.join(', ')});`;
+        });
+        const sql = createTable + insertLines.join('\n');
+        const blob = new Blob([sql], { type: 'text/plain;charset=utf-8;' });
         this.triggerDownload(blob, filename);
     }
 
@@ -2295,6 +2507,7 @@ class AlchemistApp {
                 this.currentData = result.data;
                 this.filteredData = null;
                 this.renderTable();
+                this.loadOperationHistory(); // Refresh history display
                 this.showNotification(result.message || 'Undo successful', 'success');
             } else {
                 throw new Error(result.error);
@@ -2323,6 +2536,7 @@ class AlchemistApp {
                 this.currentData = result.data;
                 this.filteredData = null;
                 this.renderTable();
+                this.loadOperationHistory(); // Refresh history display
                 this.showNotification(result.message || 'Redo successful', 'success');
             } else {
                 throw new Error(result.error);
@@ -2341,18 +2555,52 @@ class AlchemistApp {
 
             if (result.success) {
                 this.updateUndoRedoButtons(result.can_undo, result.can_redo);
+                this.displayOperationHistory(result.history || []);
             }
         } catch (error) {
             console.error('Failed to load operation history:', error);
         }
     }
 
+    displayOperationHistory(history) {
+        const historyContainer = document.getElementById('operationHistory');
+        if (!historyContainer) return;
+
+        if (history.length === 0) {
+            historyContainer.innerHTML = '<p class="history-empty">No operations yet. Perform data cleaning operations to see history.</p>';
+            return;
+        }
+
+        const historyList = history.slice().reverse(); // Show most recent first
+        historyContainer.innerHTML = `
+            <div class="history-list">
+                ${historyList.map((item, idx) => {
+                    const date = new Date(item.timestamp);
+                    const timeStr = date.toLocaleTimeString();
+                    const dateStr = date.toLocaleDateString();
+                    const shape = item.shape ? `${item.shape[0]} rows × ${item.shape[1]} cols` : 'N/A';
+                    return `
+                        <div class="history-item ${idx === 0 ? 'history-item-latest' : ''}">
+                            <div class="history-item-header">
+                                <span class="history-operation">${item.description || 'Operation'}</span>
+                                <span class="history-time">${dateStr} ${timeStr}</span>
+                            </div>
+                            <div class="history-item-details">
+                                <span class="history-shape">${shape}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
     updateUndoRedoButtons(canUndo, canRedo) {
         const undoBtn = document.getElementById('undoBtn');
         const redoBtn = document.getElementById('redoBtn');
 
-        undoBtn.disabled = !canUndo;
-        redoBtn.disabled = !canRedo;
+        if (undoBtn) undoBtn.disabled = !canUndo;
+        if (redoBtn) redoBtn.disabled = !canRedo;
     }
 
     saveSessionToStorage() {

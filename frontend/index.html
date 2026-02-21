@@ -38,8 +38,8 @@
                         <div class="upload-content">
                             <i class="fas fa-cloud-upload-alt upload-icon"></i>
                             <h2>Upload Your Dataset</h2>
-                            <p>Support for CSV, Excel, and JSON files</p>
-                            <input type="file" id="fileInput" accept=".csv,.xlsx,.xls,.json" hidden>
+                            <p>Support for CSV, Excel, JSON, and SQLite (.db) files</p>
+                            <input type="file" id="fileInput" accept=".csv,.xlsx,.xls,.json,.db,.sqlite,.sqlite3" hidden>
                             <button id="selectFileBtn" class="btn btn-primary">
                                 <i class="fas fa-folder-open"></i> Select File
                             </button>
@@ -113,6 +113,7 @@
                                     </button>
                                 </div>
                             </div>
+                            <div id="operationHistory" class="operation-history"></div>
                         </div>
 
                         <div class="sidebar-section">
@@ -163,6 +164,14 @@
                                     <span id="tableInfo"></span>
                                 </div>
                                 <div class="table-actions">
+                                    <div class="view-undo-redo">
+                                        <button type="button" id="viewUndoBtn" class="btn btn-sm btn-outline view-toolbar-btn" disabled title="Undo filter or sort">
+                                            <i class="fas fa-undo"></i><span>Undo</span>
+                                        </button>
+                                        <button type="button" id="viewRedoBtn" class="btn btn-sm btn-outline view-toolbar-btn" disabled title="Redo filter or sort">
+                                            <i class="fas fa-redo"></i><span>Redo</span>
+                                        </button>
+                                    </div>
                                     <input type="text" id="searchInput" class="form-control" placeholder="Search...">
                                     <select id="rowsPerPage" class="form-control">
                                         <option value="10">10 rows</option>
@@ -227,6 +236,17 @@
 
         <!-- Notifications -->
         <div id="notificationContainer" class="notification-container"></div>
+
+        <!-- Credits Footer -->
+        <footer class="app-credits">
+            <span>Developed by <strong>Daniel Chege</strong></span>
+            <span class="credits-sep">·</span>
+            <a href="https://github.com/danchege" class="credits-link" target="_blank" rel="noopener noreferrer" title="GitHub">GitHub</a>
+            <span class="credits-sep">·</span>
+            <a href="mailto:danychege28@gmail.com" class="credits-email" title="Email">danychege28@gmail.com</a>
+            <span class="credits-sep">·</span>
+            <a href="mailto:developerdan254@gmail.com" class="credits-email" title="Email">developerdan254@gmail.com</a>
+        </footer>
     </div>
 
     <!-- Loading Overlay -->

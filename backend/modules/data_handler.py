@@ -2,12 +2,14 @@
 Data Handler Module for Alchemist
 
 This module provides functions for data cleaning, filtering, and transformation operations.
-Supports CSV, Excel, and JSON file formats.
+Supports CSV, Excel, JSON, and SQLite (.db, .sqlite, .sqlite3) file formats.
 """
 
 import pandas as pd
 import numpy as np
 import json
+import sqlite3
+import tempfile
 from typing import Dict, List, Any, Optional
 import io
 import sys
@@ -75,6 +77,30 @@ class DataHandler:
                 else:
                     # Try pandas default reading
                     self.data = pd.read_json(io.BytesIO(file_content), **kwargs)
+            elif file_type == 'sqlite':
+                # SQLite database: write to temp file, connect, load first table
+                with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
+                    tmp.write(file_content)
+                    tmp_path = tmp.name
+                try:
+                    conn = sqlite3.connect(tmp_path)
+                    table_names = pd.read_sql_query(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+                        conn
+                    )
+                    if table_names is None or len(table_names) == 0:
+                        conn.close()
+                        return {'success': False, 'error': 'No tables found in the SQLite database'}
+                    first_table = table_names['name'].iloc[0]
+                    self.data = pd.read_sql_query(f'SELECT * FROM "{first_table}"', conn)
+                    conn.close()
+                    # Store table name for response
+                    self._last_sqlite_table = first_table
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
             else:
                 raise ValueError(f"Unsupported file type: {file_type}")
                 
@@ -97,7 +123,7 @@ class DataHandler:
             print("Preparing response data...")
             data_to_send = replace_nan_with_none(preview_dict)
             
-            return {
+            result = {
                 'success': True,
                 'data': data_to_send,  # Preview data only
                 'columns': list(self.data.columns),
@@ -106,6 +132,9 @@ class DataHandler:
                 'preview': replace_nan_with_none(preview_dict),
                 'note': 'Full dataset loaded and available for operations'
             }
+            if file_type == 'sqlite' and getattr(self, '_last_sqlite_table', None):
+                result['sqlite_table'] = self._last_sqlite_table
+            return result
         except json.JSONDecodeError as e:
             # Reset state on error
             self.data = None

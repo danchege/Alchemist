@@ -81,6 +81,8 @@ def get_file_type(file_content: bytes, filename: str) -> str:
         return 'excel'
     elif ext in ['.json']:
         return 'json'
+    elif ext in ['.db', '.sqlite', '.sqlite3']:
+        return 'sqlite'
     
     # Check MIME type
     mime_type, _ = mimetypes.guess_type(filename)
@@ -91,6 +93,12 @@ def get_file_type(file_content: bytes, filename: str) -> str:
             return 'excel'
         elif 'json' in mime_type:
             return 'json'
+        elif 'sqlite' in mime_type or 'x-sqlite' in mime_type:
+            return 'sqlite'
+    
+    # Try to detect by content (SQLite files start with "SQLite format 3")
+    if file_content[:16] == b'SQLite format 3\x00':
+        return 'sqlite'
     
     # Try to detect by content
     try:

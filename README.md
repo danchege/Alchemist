@@ -1,13 +1,13 @@
 # Alchemist - Data Cleaning and Transformation Tool
 
-Alchemist is a web-based data cleaning and transformation tool similar to OpenRefine, built with a Python Flask backend and a modern JavaScript frontend. Upload, clean, transform, visualize, and export datasets from CSV, Excel, and JSON with session management and **case-insensitive** filtering and search.
+Alchemist is a web-based data cleaning and transformation tool similar to OpenRefine, built with a Python Flask backend and a modern JavaScript frontend. Upload, clean, transform, visualize, and export datasets from CSV, Excel, JSON, and SQLite with session management and **case-insensitive** filtering and search.
 
 ---
 
 ## Features
 
 ### Data Upload & Management
-- **Multiple format support**: CSV, Excel (.xlsx, .xls), and JSON
+- **Multiple format support**: CSV, Excel (.xlsx, .xls), JSON, and **SQLite** (.db, .sqlite, .sqlite3)
 - **Drag & drop**: File upload with progress
 - **Data preview**: Instant preview and metadata after upload
 - **Session management**: Persistent sessions; **New Session** clears state and returns to upload screen
@@ -37,9 +37,9 @@ Alchemist is a web-based data cleaning and transformation tool similar to OpenRe
   - **Preview** (after operations): CSV, Excel, JSON, TSV, HTML
 
 ### Export & Download
-- **Download** (main button): Export full dataset from server (CSV, Excel, JSON)
-- **Download current view**: Export the **current table** (filtered or full) as CSV, Excel, JSON, TSV, or HTML without leaving the page
-- **Preview Results modal**: Download original or preview sample in CSV, Excel, JSON, TSV, or HTML
+- **Download** (main button): Export full dataset from server (CSV, Excel, JSON, TSV, HTML, SQL)
+- **Download current view**: Export the **current table** (filtered or full) as CSV, Excel, JSON, TSV, HTML, or SQL
+- **Preview Results modal**: Download original or preview sample in CSV, Excel, JSON, TSV, HTML, or SQL
 
 ### Visualization & Analysis
 - **Charts**: Histograms, scatter, bar, box, heatmap, line, pie (Plotly.js)
@@ -113,7 +113,7 @@ The Flask app serves the frontend. Open **http://localhost:5000** in your browse
 ## Usage
 
 ### 1. Upload data
-- Click **Select File** or drag and drop a CSV, Excel, or JSON file.
+- Click **Select File** or drag and drop a CSV, Excel, JSON, or SQLite (.db) file.
 - After processing, the workspace opens with the table view.
 
 ### 2. Work with the table
@@ -158,7 +158,7 @@ The Flask app serves the frontend. Open **http://localhost:5000** in your browse
 
 ## Troubleshooting
 
-- **Upload fails**: Use CSV, Excel, or JSON; check file size and that the file isn’t corrupted.
+- **Upload fails**: Use CSV, Excel, JSON, or SQLite (.db); check file size and that the file isn’t corrupted.
 - **Charts not showing**: Check console for errors; ensure Plotly loads and data has suitable columns.
 - **Slow with large data**: Use filters or reduce rows per page.
 
