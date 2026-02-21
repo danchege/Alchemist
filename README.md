@@ -1,8 +1,12 @@
 # Alchemist - Data Cleaning and Transformation Tool
 
-Alchemist is a web-based data cleaning and transformation tool similar to OpenRefine, built with a Python Flask backend and a modern JavaScript frontend. Upload, clean, transform, visualize, and export datasets from CSV, Excel, JSON, and SQLite with session management and **case-insensitive** filtering and search.
+Alchemist is a web-based data cleaning and transformation tool built with a Python Flask backend and a modern JavaScript frontend. Upload, clean, transform, visualize, and export datasets from CSV, Excel, JSON, and SQLite with session management and **case-insensitive** filtering and search.
 
 ---
+
+## Live Demo
+
+https://alchemist-6qfo.onrender.com/
 
 ## Features
 
