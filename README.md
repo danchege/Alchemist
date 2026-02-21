@@ -85,6 +85,22 @@ Backend dependencies (see `backend/requirements.txt`):
 
 ---
 
+## Screenshots
+
+### Home Screen - Upload & Data Management
+![Home Screen](screenshots/home.png)
+
+### Table View - Data Cleaning & Filtering
+![Table View](screenshots/table_view.png)
+
+### Statistics & Analysis
+![Statistics](screenshots/statistics.png)
+
+### Export & Download Options
+![Download](screenshots/download.png)
+
+---
+
 ## Project Structure
 
 ```
