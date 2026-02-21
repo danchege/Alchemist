@@ -747,9 +747,9 @@ def internal_error(e):
 
 
 if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
     print("Starting Alchemist - Data Cleaning Tool")
     print(f"Upload folder: {app.config['UPLOAD_FOLDER']}")
     print(f"Session folder: {app.config['SESSION_FOLDER']}")
-    print("Server running on http://localhost:5000")
-    
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    print(f"Server running on http://0.0.0.0:{port}")
+    app.run(debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true', host='0.0.0.0', port=port)

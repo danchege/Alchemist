@@ -1,0 +1,23 @@
+# Render Blueprint - Alchemist Data Cleaning Tool
+# Deploy from repo: https://dashboard.render.com/ → New → Web Service → Connect repo
+# Or use: render deploy (Render CLI)
+
+services:
+  - type: web
+    name: alchemist
+    runtime: python
+    region: oregon
+
+    # Build: install deps from backend/requirements.txt
+    buildCommand: "python -m pip install -r backend/requirements.txt"
+    startCommand: "cd backend && python -m gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 300 app:app"
+
+    # Root is repo root; working dir for start is backend
+    rootDir: .
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+
+    # Optional: increase if you need larger uploads (Render free tier has limits)
+    # plan: starter

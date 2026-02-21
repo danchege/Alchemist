@@ -5,7 +5,7 @@
 
 class AlchemistApp {
     constructor() {
-        this.apiBase = '/api';
+        this.apiBase = (typeof window !== 'undefined' && window.__ALCHEMIST_API_BASE__) ? window.__ALCHEMIST_API_BASE__ : '/api';
         this.currentData = null;
         this.currentSession = null;
         this.currentView = 'table';
