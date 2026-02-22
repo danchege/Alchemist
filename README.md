@@ -204,21 +204,21 @@ PORT=5001 ./Alchemist
 ALCH_OPEN_BROWSER=0 ./Alchemist
 ```
 
-### 📦 Install (Linux)
+### Install (Linux)
 
-1️⃣ Download the latest release
+1. Download the latest release
 
 ```bash
 curl -L https://github.com/danchege/Alchemist/releases/latest/download/Alchemist-linux-x86_64.tar.gz -o Alchemist-linux-x86_64.tar.gz
 ```
 
-2️⃣ Extract the archive
+2. Extract the archive
 
 ```bash
 tar -xzf Alchemist-linux-x86_64.tar.gz
 ```
 
-3️⃣ Install globally
+3. Install globally
 
 ```bash
 cd Alchemist-linux-x86_64
