@@ -52,15 +52,47 @@ Backend dependencies (see `backend/requirements.txt`):
 - **Data type conversion**: Convert column types
 - **Text cleaning**: Trim whitespace, normalize case
 - **Remove empty rows/columns**
+- **Facet into**: Group and analyze data by categorical values
 
 ### Table & Column Tools
 - **Column header dropdown** (per column):
   - **Sort A→Z / Z→A**: Sort ascending or descending
   - **Filter**: Inline filter with operator (Equals, Not Equals, Greater Than, Less Than, Contains, Not Contains) and value
+  - **Facet into**: Group data by unique values in the column with counts and percentages
   - **Column statistics**: Jump to Statistics view for that column
 - **Case-insensitive behavior**: All filters and table search are **case-insensitive** (e.g. "yes" matches "YES")
 - **Table search**: Real-time search across all columns (case-insensitive)
 - **Pagination**: Configurable rows per page
+
+### Facet Operations
+- **Create facets**: Select any column and choose "Facet into" to see distribution of values
+- **Value counts**: Display exact counts and percentages for each unique value
+- **Interactive filtering**: Click facet values to instantly filter the table
+- **Multi-column analysis**: Create multiple facets to understand data relationships
+- **Export faceted data**: Download filtered results after applying facet selections
+
+### Large File Mode (for bigger CSV files)
+
+For large CSV uploads, Alchemist automatically switches to **Large File Mode** to keep memory usage stable.
+
+- **How it works**: the uploaded CSV is imported into a local **SQLite** database and the table view uses server-side paging.
+- **Threshold**: by default this activates for CSV files >= **25MB** (`LARGE_FILE_THRESHOLD_BYTES`).
+
+Supported in Large File Mode:
+
+- **Pagination** (server-side)
+- **Filter** (server-side)
+- **Sort** (server-side)
+- **Search** (server-side, case-insensitive)
+- **Cleaning (subset)**:
+  - Remove duplicates
+  - Remove empty rows
+  - Clean text (trim whitespace, normalize case)
+
+Not yet supported in Large File Mode:
+
+- Full in-memory operations pipeline (some cleaning/preview features)
+- Statistics and plots for the entire dataset
 
 ### Preview Operations
 - **Preview before applying**: Run remove duplicates, remove empty rows, clean text (trim, normalize case) on a sample and compare **Original** vs **Preview**
@@ -82,6 +114,13 @@ Backend dependencies (see `backend/requirements.txt`):
 ### Other
 - **Reset**: Restore dataset to last uploaded state
 - **Case-insensitive operations**: Filter and search ignore letter case
+
+### Clustering (fuzzy merge)
+
+Alchemist includes a clustering tool for categorical columns.
+
+- **Suggest similar values**: Find values that are likely the same (based on fingerprinting)
+- **Merge to canonical**: Replace multiple variants with a single chosen canonical value
 
 ---
 
@@ -299,6 +338,13 @@ The Flask app serves the frontend. Open **http://localhost:5000** in your browse
 - Use **Remove Duplicates**, **Fill Missing**, **Clean Text**, etc. from the sidebar.
 - Use **Download** for the full dataset, or **Download current view** for the current table.
 - **New Session**: Clears state and shows the upload screen again (any unsaved work is lost after you confirm).
+
+### 5. Use facet operations
+- **Facet into**: Open the column **▼** menu → **Facet into** to group data by unique values in that column
+- **Explore facets**: View counts and percentages for each unique value in the selected column
+- **Filter by facet**: Click on any facet value to filter the table to show only rows with that value
+- **Combine facets**: Create multiple facets on different columns to analyze data intersections
+- **Remove facets**: Clear individual facets or all facets to return to the full dataset view
 
 ---
 

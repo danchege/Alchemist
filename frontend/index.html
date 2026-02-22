@@ -61,7 +61,10 @@
             <section id="workspaceSection" class="section hidden">
                 <div class="workspace-header">
                     <div class="dataset-info">
-                        <h3 id="datasetTitle">Dataset</h3>
+                        <div class="dataset-title-row">
+                            <h3 id="datasetTitle">Dataset</h3>
+                            <span id="largeModeBadge" class="dataset-badge hidden">Large Mode (SQLite)</span>
+                        </div>
                         <span id="datasetSize" class="dataset-size"></span>
                     </div>
                     <div class="workspace-actions">
@@ -136,6 +139,29 @@
                                 <button id="applyFilterBtn" class="btn btn-sm btn-primary">Apply Filter</button>
                                 <button id="clearFiltersBtn" class="btn btn-sm btn-secondary">Clear Filters</button>
                             </div>
+                        </div>
+
+                        <div class="sidebar-section">
+                            <h4><i class="fas fa-list"></i> Facets</h4>
+                            <div class="facet-controls">
+                                <select id="facetColumn" class="form-control">
+                                    <option value="">Select column...</option>
+                                </select>
+                                <button id="loadFacetBtn" class="btn btn-sm btn-primary">Load Facet</button>
+                            </div>
+                            <div id="facetProfile" class="facet-profile"></div>
+                        </div>
+
+                        <div class="sidebar-section">
+                            <h4><i class="fas fa-object-group"></i> Clustering</h4>
+                            <div class="cluster-controls">
+                                <select id="clusterColumn" class="form-control">
+                                    <option value="">Select column...</option>
+                                </select>
+                                <input type="number" id="clusterMaxUnique" class="form-control" value="2000" min="50" max="10000" step="50" placeholder="Max unique values">
+                                <button id="runClusterBtn" class="btn btn-sm btn-primary">Find Similar Values</button>
+                            </div>
+                            <div id="clusterResults" class="cluster-results"></div>
                         </div>
 
                         <div class="sidebar-section">
@@ -254,12 +280,12 @@
     <!-- Loading Overlay -->
     <div id="loadingOverlay" class="loading-overlay hidden">
         <div class="loading-spinner">
-            <i class="fas fa-spinner fa-spin"></i>
-            <p>Processing...</p>
+            <i class="fas fa-spinner"></i>
+            <p>Processing Data</p>
+            <div class="loading-subtext">Please wait while we clean your data...</div>
         </div>
     </div>
 
-    <script src="config.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

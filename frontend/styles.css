@@ -318,6 +318,24 @@ body {
     margin-bottom: 0.25rem;
 }
 
+.dataset-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.dataset-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(59, 130, 246, 0.12);
+    color: #2563eb;
+    border: 1px solid rgba(59, 130, 246, 0.25);
+}
+
 .dataset-size {
     font-size: 0.875rem;
     color: var(--text-secondary);
@@ -326,6 +344,126 @@ body {
 .workspace-actions {
     display: flex;
     gap: 0.75rem;
+}
+
+.facet-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.facet-profile {
+    margin-top: 0.75rem;
+    font-size: 0.875rem;
+}
+
+.facet-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.75rem;
+}
+
+.facet-values {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.facet-value-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.facet-value-btn {
+    text-align: left;
+    padding: 0.2rem 0.35rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(148, 163, 184, 0.08);
+    color: var(--text-color);
+    cursor: pointer;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.facet-value-btn:hover {
+    background: rgba(59, 130, 246, 0.12);
+    border-color: rgba(59, 130, 246, 0.25);
+}
+
+.facet-count {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.cluster-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.cluster-results {
+    margin-top: 0.75rem;
+    font-size: 0.875rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.cluster-card {
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    background: rgba(148, 163, 184, 0.05);
+    border-radius: var(--radius-md);
+    padding: 0.6rem;
+}
+
+.cluster-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.cluster-members {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-top: 0.5rem;
+}
+
+.cluster-member {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.cluster-member label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    overflow: hidden;
+}
+
+.cluster-member-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 180px;
+}
+
+.cluster-actions {
+    margin-top: 0.5rem;
+    display: flex;
+    justify-content: flex-end;
 }
 
 .workspace-content {
@@ -950,25 +1088,48 @@ body {
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: rgba(0, 0, 0, 0.7);
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 999;
+    z-index: 9999;
+    backdrop-filter: blur(2px);
 }
 
 .loading-spinner {
     background-color: var(--surface-color);
     border-radius: var(--radius-lg);
-    padding: 2rem;
+    padding: 2.5rem;
     text-align: center;
     box-shadow: var(--shadow-lg);
+    border: 1px solid var(--border-color);
+    min-width: 200px;
 }
 
 .loading-spinner i {
-    font-size: 2rem;
+    font-size: 2.5rem;
     color: var(--primary-color);
     margin-bottom: 1rem;
+    animation: spin 1s linear infinite;
+}
+
+.loading-spinner p {
+    margin: 0;
+    font-weight: 600;
+    color: var(--text-color);
+    font-size: 1.1rem;
+}
+
+.loading-spinner .loading-subtext {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    font-weight: 400;
+    margin-top: 0.5rem;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 
 /* Responsive Design */

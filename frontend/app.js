@@ -16,6 +16,10 @@ class AlchemistApp {
         this.sortColumn = null;
         this.sortDirection = 'asc';
         this.activeColumnDropdown = null;
+        this.largeMode = false;
+        this.largeTotalRows = 0;
+        this.largeFilter = null;
+        this.largeSort = null;
         this.viewHistory = [];
         this.viewRedoStack = [];
         this.maxViewHistory = 30;
@@ -72,6 +76,12 @@ class AlchemistApp {
         // Filters
         document.getElementById('applyFilterBtn').addEventListener('click', () => this.applyFilter());
         document.getElementById('clearFiltersBtn').addEventListener('click', () => this.clearFilters());
+
+        // Facets
+        document.getElementById('loadFacetBtn').addEventListener('click', () => this.loadFacetProfile());
+
+        // Clustering
+        document.getElementById('runClusterBtn').addEventListener('click', () => this.runClustering());
 
         // Visualizations
         document.getElementById('plotType').addEventListener('change', () => this.updatePlotParameters());
@@ -186,6 +196,10 @@ class AlchemistApp {
                 this.currentData = result.data_info.data;
                 this.currentSession = result.session_id;
                 this.filteredData = null;
+                this.largeMode = !!result.large_mode;
+                this.largeTotalRows = (result.pagination && result.pagination.total_rows) ? result.pagination.total_rows : 0;
+                this.largeFilter = null;
+                this.largeSort = null;
                 
                 this.saveSessionToStorage();
                 this.showWorkspace(result);
@@ -225,6 +239,15 @@ class AlchemistApp {
             : title;
         document.getElementById('datasetSize').textContent = `${data.data_info.shape[0].toLocaleString()} rows × ${data.data_info.shape[1]} columns`;
 
+        const largeModeBadge = document.getElementById('largeModeBadge');
+        if (largeModeBadge) {
+            if (this.largeMode) {
+                largeModeBadge.classList.remove('hidden');
+            } else {
+                largeModeBadge.classList.add('hidden');
+            }
+        }
+
         // Update column selectors
         this.updateColumnSelectors(data.data_info.columns);
 
@@ -247,6 +270,259 @@ class AlchemistApp {
             option.textContent = column;
             filterColumn.appendChild(option);
         });
+
+        const facetColumn = document.getElementById('facetColumn');
+        if (facetColumn) {
+            facetColumn.innerHTML = '<option value="">Select column...</option>';
+            columns.forEach(column => {
+                const option = document.createElement('option');
+                option.value = column;
+                option.textContent = column;
+                facetColumn.appendChild(option);
+            });
+        }
+
+        const clusterColumn = document.getElementById('clusterColumn');
+        if (clusterColumn) {
+            clusterColumn.innerHTML = '<option value="">Select column...</option>';
+            columns.forEach(column => {
+                const option = document.createElement('option');
+                option.value = column;
+                option.textContent = column;
+                clusterColumn.appendChild(option);
+            });
+        }
+    }
+
+    async runClustering() {
+        const clusterColumn = document.getElementById('clusterColumn');
+        const clusterResults = document.getElementById('clusterResults');
+        const maxUniqueEl = document.getElementById('clusterMaxUnique');
+        if (!clusterColumn || !clusterResults) return;
+
+        const column = clusterColumn.value;
+        if (!column) {
+            this.showNotification('Please select a clustering column', 'warning');
+            return;
+        }
+
+        const maxUnique = maxUniqueEl ? parseInt(maxUniqueEl.value || '2000') : 2000;
+        const safeMaxUnique = Number.isFinite(maxUnique) ? Math.max(50, Math.min(10000, maxUnique)) : 2000;
+
+        clusterResults.innerHTML = '';
+        this.showLoading(true);
+        try {
+            const params = new URLSearchParams({
+                column,
+                max_unique: String(safeMaxUnique)
+            });
+            if (this.currentSession) {
+                params.set('session_id', this.currentSession);
+            }
+
+            const response = await fetch(`${this.apiBase}/cluster/suggest?${params.toString()}`);
+            const result = await response.json();
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to suggest clusters');
+            }
+
+            const clusters = result.clusters || [];
+            if (clusters.length === 0) {
+                clusterResults.innerHTML = '<div class="text-muted">No similar values found.</div>';
+                return;
+            }
+
+            clusters.slice(0, 50).forEach((c, idx) => {
+                const card = document.createElement('div');
+                card.className = 'cluster-card';
+
+                const header = document.createElement('div');
+                header.className = 'cluster-header';
+
+                const title = document.createElement('div');
+                title.innerHTML = `<strong>${c.canonical}</strong> <span class="text-muted">(${c.size})</span>`;
+
+                header.appendChild(title);
+                card.appendChild(header);
+
+                const members = document.createElement('div');
+                members.className = 'cluster-members';
+
+                (c.members || []).forEach((m, mi) => {
+                    const row = document.createElement('div');
+                    row.className = 'cluster-member';
+
+                    const label = document.createElement('label');
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.checked = true;
+                    cb.dataset.value = m.value;
+
+                    const text = document.createElement('span');
+                    text.className = 'cluster-member-text';
+                    text.title = m.value;
+                    text.textContent = m.value;
+
+                    label.appendChild(cb);
+                    label.appendChild(text);
+
+                    const count = document.createElement('span');
+                    count.className = 'facet-count';
+                    count.textContent = (m.count || 0).toLocaleString();
+
+                    row.appendChild(label);
+                    row.appendChild(count);
+                    members.appendChild(row);
+                });
+
+                card.appendChild(members);
+
+                const actions = document.createElement('div');
+                actions.className = 'cluster-actions';
+
+                const applyBtn = document.createElement('button');
+                applyBtn.type = 'button';
+                applyBtn.className = 'btn btn-sm btn-primary';
+                applyBtn.textContent = 'Merge to canonical';
+                applyBtn.addEventListener('click', async () => {
+                    const selected = Array.from(card.querySelectorAll('input[type="checkbox"]'))
+                        .filter(x => x.checked)
+                        .map(x => x.dataset.value)
+                        .filter(v => v !== undefined && v !== null);
+
+                    if (selected.length < 2) {
+                        this.showNotification('Select at least 2 values to merge', 'warning');
+                        return;
+                    }
+                    await this.applyClusterMerge(column, c.canonical, selected);
+                });
+
+                actions.appendChild(applyBtn);
+                card.appendChild(actions);
+
+                clusterResults.appendChild(card);
+            });
+        } catch (e) {
+            this.showNotification(`Clustering failed: ${e.message}`, 'error');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    async applyClusterMerge(column, canonical, values) {
+        this.showLoading(true);
+        try {
+            const response = await fetch(`${this.apiBase}/cluster/apply`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    session_id: this.currentSession,
+                    column,
+                    canonical,
+                    values
+                })
+            });
+            const result = await response.json();
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to apply merge');
+            }
+
+            if (result.data) {
+                this.currentData = result.data;
+                this.filteredData = null;
+            }
+            if (result.shape) {
+                document.getElementById('datasetSize').textContent = `${result.shape[0].toLocaleString()} rows × ${result.shape[1]} columns`;
+            }
+
+            this.currentPage = 1;
+            this.renderTable();
+            this.loadOperationHistory();
+            this.showNotification('Cluster merge applied', 'success');
+        } catch (e) {
+            this.showNotification(`Merge failed: ${e.message}`, 'error');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    async loadFacetProfile() {
+        const facetColumn = document.getElementById('facetColumn');
+        const facetProfile = document.getElementById('facetProfile');
+        if (!facetColumn || !facetProfile) return;
+
+        const column = facetColumn.value;
+        if (!column) {
+            this.showNotification('Please select a facet column', 'warning');
+            return;
+        }
+
+        this.showLoading(true);
+        facetProfile.innerHTML = '';
+        try {
+            const url = new URL(`${window.location.origin}${this.apiBase}/facets/profile`);
+            url.searchParams.set('column', column);
+            if (this.currentSession) {
+                url.searchParams.set('session_id', this.currentSession);
+            }
+            url.searchParams.set('top_n', '20');
+
+            const response = await fetch(url.toString());
+            const result = await response.json();
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to load facet');
+            }
+
+            const totalRows = result.total_rows || 0;
+            const nullRows = result.null_rows || 0;
+            const emptyRows = result.empty_rows || 0;
+            const uniqueCount = result.unique_count || 0;
+            const topValues = result.top_values || [];
+
+            facetProfile.innerHTML = `
+                <div class="facet-metrics">
+                    <div><strong>Total</strong>: ${totalRows.toLocaleString()}</div>
+                    <div><strong>Unique</strong>: ${uniqueCount.toLocaleString()}</div>
+                    <div><strong>Null</strong>: ${nullRows.toLocaleString()}</div>
+                    <div><strong>Empty</strong>: ${emptyRows.toLocaleString()}</div>
+                </div>
+                <div class="facet-values"></div>
+            `;
+
+            const valuesContainer = facetProfile.querySelector('.facet-values');
+            topValues.forEach(tv => {
+                const val = (tv.value === null || tv.value === undefined) ? '' : String(tv.value);
+                const count = tv.count || 0;
+                const row = document.createElement('div');
+                row.className = 'facet-value-row';
+
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'facet-value-btn';
+                btn.title = val;
+                btn.textContent = val === '' ? '(empty)' : val;
+                btn.addEventListener('click', async () => {
+                    document.getElementById('filterColumn').value = column;
+                    document.getElementById('filterOperator').value = val === '' ? 'equals' : 'equals';
+                    document.getElementById('filterValue').value = val;
+                    await this.applyFilter();
+                });
+
+                const countEl = document.createElement('span');
+                countEl.className = 'facet-count';
+                countEl.textContent = count.toLocaleString();
+
+                row.appendChild(btn);
+                row.appendChild(countEl);
+                valuesContainer.appendChild(row);
+            });
+        } catch (e) {
+            this.showNotification(`Facet load failed: ${e.message}`, 'error');
+        } finally {
+            this.showLoading(false);
+        }
     }
 
     switchView(view) {
@@ -271,6 +547,10 @@ class AlchemistApp {
     }
 
     renderTable() {
+        if (this.largeMode) {
+            this.renderLargeTable();
+            return;
+        }
         const data = this.filteredData || this.currentData;
         if (!data || data.length === 0) return;
 
@@ -448,6 +728,96 @@ class AlchemistApp {
         this.updatePagination(filteredData.length);
     }
 
+    async renderLargeTable() {
+        if (!this.currentSession) return;
+
+        const tableHeader = document.getElementById('tableHeader');
+        const tableBody = document.getElementById('tableBody');
+        const tableInfo = document.getElementById('tableInfo');
+
+        tableHeader.innerHTML = '';
+        tableBody.innerHTML = '';
+
+        try {
+            this.showLoading(true);
+
+            const params = new URLSearchParams({
+                session_id: this.currentSession,
+                page: String(this.currentPage),
+                page_size: String(this.rowsPerPage)
+            });
+
+            if (this.largeSort && this.largeSort.column) {
+                params.set('sort_column', this.largeSort.column);
+                params.set('sort_dir', this.largeSort.direction || 'asc');
+            }
+
+            if (this.largeFilter && this.largeFilter.column) {
+                params.set('filter_column', this.largeFilter.column);
+                params.set('filter_operator', this.largeFilter.operator);
+                params.set('filter_value', this.largeFilter.value);
+            }
+
+            if (this.searchTerm && String(this.searchTerm).trim() !== '') {
+                params.set('search_term', String(this.searchTerm).trim());
+            }
+
+            const response = await fetch(`${this.apiBase}/data/page?${params.toString()}`);
+            const result = await response.json();
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to fetch page');
+            }
+
+            const pageData = result.data || [];
+            const columns = result.columns || (pageData[0] ? Object.keys(pageData[0]) : []);
+            this.largeTotalRows = typeof result.total_rows === 'number' ? result.total_rows : this.largeTotalRows;
+
+            if (columns.length === 0) {
+                tableInfo.textContent = 'No data to display';
+                this.updatePagination(this.largeTotalRows || 0);
+                return;
+            }
+
+            const headerRow = document.createElement('tr');
+            columns.forEach(column => {
+                const th = document.createElement('th');
+                th.textContent = column;
+                th.title = column;
+                th.style.cursor = 'pointer';
+                th.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const nextDir = (this.largeSort && this.largeSort.column === column && this.largeSort.direction === 'asc') ? 'desc' : 'asc';
+                    this.sortTable(column, nextDir);
+                });
+                headerRow.appendChild(th);
+            });
+            tableHeader.appendChild(headerRow);
+
+            pageData.forEach(row => {
+                const tr = document.createElement('tr');
+                columns.forEach(col => {
+                    const td = document.createElement('td');
+                    const value = row[col];
+                    td.textContent = value !== null && value !== undefined ? String(value) : '';
+                    td.title = value !== null && value !== undefined ? String(value) : '';
+                    tr.appendChild(td);
+                });
+                tableBody.appendChild(tr);
+            });
+
+            const startIndex = (this.currentPage - 1) * this.rowsPerPage;
+            const endIndex = startIndex + pageData.length;
+            const total = this.largeTotalRows || 0;
+            tableInfo.textContent = `Showing ${Math.min(startIndex + 1, total)}-${Math.min(endIndex, total)} of ${total} rows`;
+
+            this.updatePagination(total);
+        } catch (e) {
+            this.showNotification(`Failed to render large table: ${e.message}`, 'error');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
     updatePagination(totalRows) {
         const pagination = document.getElementById('tablePagination');
         pagination.innerHTML = '';
@@ -587,6 +957,12 @@ class AlchemistApp {
     }
 
     sortTable(column, direction = 'asc', skipViewHistory = false) {
+        if (this.largeMode) {
+            this.largeSort = { column, direction };
+            this.currentPage = 1;
+            this.renderTable();
+            return;
+        }
         const data = this.filteredData || this.currentData;
         if (!data) return;
 
@@ -618,7 +994,7 @@ class AlchemistApp {
 
     async removeDuplicates() {
         try {
-            this.showLoading(true);
+            this.showLoading(true, 'Removing Duplicates', 'Finding and removing duplicate rows...');
             
             const response = await fetch(`${this.apiBase}/clean`, {
                 method: 'POST',
@@ -696,7 +1072,7 @@ class AlchemistApp {
                 value = document.getElementById('customValue').value;
             }
 
-            this.showLoading(true);
+            this.showLoading(true, 'Filling Missing Values', `Filling missing values in ${column} using ${method}...`);
 
             const response = await fetch(`${this.apiBase}/clean`, {
                 method: 'POST',
@@ -728,6 +1104,81 @@ class AlchemistApp {
             }
         } catch (error) {
             this.showNotification(`Failed to fill missing values: ${error.message}`, 'error');
+        } finally {
+            this.showLoading(false);
+        }
+    }
+
+    showConvertTypesModal() {
+        const modalBody = document.getElementById('modalBody');
+        const columns = this.currentData ? Object.keys(this.currentData[0]) : [];
+
+        modalBody.innerHTML = `
+            <div class="form-group">
+                <label>Select columns to convert:</label>
+                <div class="checkbox-group" style="max-height: 200px; overflow-y: auto;">
+                    ${columns.map(col => `
+                        <label class="checkbox-label">
+                            <input type="checkbox" value="${col}" checked> ${col}
+                        </label>
+                    `).join('')}
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="targetType">Target Type:</label>
+                <select id="targetType" class="form-control">
+                    <option value="numeric">Numeric</option>
+                    <option value="string">String</option>
+                    <option value="datetime">DateTime</option>
+                    <option value="boolean">Boolean</option>
+                </select>
+            </div>
+        `;
+
+        this.showModal('Convert Data Types', () => this.convertTypes());
+    }
+
+    async convertTypes() {
+        try {
+            const selectedColumns = Array.from(document.querySelectorAll('#modalBody input[type="checkbox"]:checked'))
+                .map(cb => cb.value);
+
+            if (selectedColumns.length === 0) {
+                this.showNotification('Please select at least one column', 'warning');
+                return;
+            }
+
+            const targetType = document.getElementById('targetType').value;
+
+            this.showLoading(true, 'Converting Data Types', `Converting selected columns to ${targetType}...`);
+
+            const response = await fetch(`${this.apiBase}/clean`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    operation: 'convert_types',
+                    columns: selectedColumns,
+                    target_type: targetType,
+                    session_id: this.currentSession
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.currentData = result.data;
+                this.filteredData = null;
+                this.currentPage = 1;
+                this.renderTable();
+                this.showNotification('Data types converted successfully', 'success');
+                this.closeModal();
+            } else {
+                throw new Error(result.error);
+            }
+        } catch (error) {
+            this.showNotification(`Failed to convert data types: ${error.message}`, 'error');
         } finally {
             this.showLoading(false);
         }
@@ -927,6 +1378,12 @@ class AlchemistApp {
     }
 
     async applyFilterInternal(column, operator, value) {
+        if (this.largeMode) {
+            this.largeFilter = { column, operator, value };
+            this.currentPage = 1;
+            return;
+        }
+
         this.showLoading(true);
         try {
             const response = await fetch(`${this.apiBase}/filter`, {
@@ -935,6 +1392,7 @@ class AlchemistApp {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
+                    session_id: this.currentSession,
                     filters: [{
                         column: column,
                         operator: operator,
@@ -958,6 +1416,9 @@ class AlchemistApp {
     clearFilters() {
         this.saveViewStateToHistory();
         this.filteredData = null;
+        if (this.largeMode) {
+            this.largeFilter = null;
+        }
         this.currentPage = 1;
         document.getElementById('filterColumn').value = '';
         document.getElementById('filterOperator').value = 'equals';
@@ -1855,9 +2316,26 @@ class AlchemistApp {
         return icons[type] || icons.info;
     }
 
-    showLoading(show) {
+    showLoading(show, message = null, subtext = null) {
         const overlay = document.getElementById('loadingOverlay');
+        const titleElement = overlay.querySelector('p');
+        const subtextElement = overlay.querySelector('.loading-subtext');
+        
         if (show) {
+            // Update message if provided
+            if (message) {
+                titleElement.textContent = message;
+            } else {
+                titleElement.textContent = 'Processing Data';
+            }
+            
+            // Update subtext if provided
+            if (subtext) {
+                subtextElement.textContent = subtext;
+            } else {
+                subtextElement.textContent = 'Please wait while we clean your data...';
+            }
+            
             overlay.classList.remove('hidden');
         } else {
             overlay.classList.add('hidden');
@@ -1927,7 +2405,7 @@ class AlchemistApp {
                 return;
             }
 
-            this.showLoading(true);
+            this.showLoading(true, 'Cleaning Text Data', 'Cleaning text in selected columns...');
 
             const response = await fetch(`${this.apiBase}/clean`, {
                 method: 'POST',
@@ -1988,7 +2466,7 @@ class AlchemistApp {
         try {
             const target = document.querySelector('input[name="target"]:checked').value;
 
-            this.showLoading(true);
+            this.showLoading(true, 'Removing Empty Rows/Columns', `Removing empty ${target}...`);
 
             const response = await fetch(`${this.apiBase}/clean`, {
                 method: 'POST',
@@ -2120,7 +2598,7 @@ class AlchemistApp {
                 payload.data = this.filteredData.slice(0, sampleSize);
             }
 
-            this.showLoading(true);
+            this.showLoading(true, 'Previewing Operations', 'Generating preview of selected operations...');
 
             const response = await fetch(`${this.apiBase}/preview`, {
                 method: 'POST',
