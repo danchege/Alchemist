@@ -11,9 +11,10 @@ import hashlib
 import json
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional, Union, Iterable
 from datetime import datetime
 import mimetypes
+import re
 
 
 def replace_nan_with_none(obj: Any) -> Any:
@@ -516,3 +517,48 @@ def export_to_format(data: pd.DataFrame, format_type: str,
             'success': False,
             'error': str(e)
         }
+
+
+def export_to_mysql_sql(
+    columns: List[str],
+    rows: Iterable[Dict[str, Any]],
+    table_name: str = 'exported_data',
+) -> str:
+    """
+    Generate MySQL-compatible SQL (CREATE DATABASE, USE, CREATE TABLE, INSERTs).
+    Safe for use in MySQL Workbench; uses backticks for identifiers and proper escaping.
+    """
+    def safe_name(s: str) -> str:
+        return re.sub(r'[^a-zA-Z0-9_]', '_', str(s)) or 'col'
+
+    def backtick(name: str) -> str:
+        return '`' + str(name).replace('`', '``') + '`'
+
+    def escape_value(v: Any) -> str:
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return 'NULL'
+        s = str(v)
+        return "'" + s.replace('\\', '\\\\').replace("'", "''") + "'"
+
+    safe_headers = [safe_name(c) or f'col_{i}' for i, c in enumerate(columns)]
+    table_id = backtick(safe_name(table_name) or 'exported_data')
+    db_name = backtick('alchemist_export')
+
+    create_db_use = (
+        f"-- MySQL-compatible export (run entire script in MySQL Workbench)\n"
+        f"CREATE DATABASE IF NOT EXISTS {db_name};\n"
+        f"USE {db_name};\n\n"
+    )
+    create_table = (
+        f"CREATE TABLE IF NOT EXISTS {table_id} (\n  "
+        + ",\n  ".join(f"{backtick(h)} TEXT" for h in safe_headers)
+        + "\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n\n"
+    )
+    insert_lines = []
+    for row in rows:
+        values = [escape_value(row.get(c)) for c in columns]
+        insert_lines.append(
+            f"INSERT INTO {table_id} ({', '.join(backtick(h) for h in safe_headers)}) "
+            f"VALUES ({', '.join(values)});"
+        )
+    return create_db_use + create_table + '\n'.join(insert_lines)

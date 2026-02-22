@@ -781,14 +781,128 @@ class AlchemistApp {
             const headerRow = document.createElement('tr');
             columns.forEach(column => {
                 const th = document.createElement('th');
-                th.textContent = column;
-                th.title = column;
-                th.style.cursor = 'pointer';
-                th.addEventListener('click', (e) => {
+                th.className = 'data-table-th-with-menu';
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'column-header-wrapper';
+
+                const label = document.createElement('span');
+                label.className = 'column-header-label';
+                label.textContent = column;
+                label.title = column;
+                label.addEventListener('click', (e) => {
                     e.stopPropagation();
                     const nextDir = (this.largeSort && this.largeSort.column === column && this.largeSort.direction === 'asc') ? 'desc' : 'asc';
                     this.sortTable(column, nextDir);
                 });
+
+                const arrowBtn = document.createElement('button');
+                arrowBtn.type = 'button';
+                arrowBtn.className = 'column-dropdown-trigger';
+                arrowBtn.setAttribute('aria-label', `Options for ${column}`);
+                arrowBtn.setAttribute('data-column', column);
+                arrowBtn.innerHTML = '<i class="fas fa-chevron-down"></i>';
+                arrowBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    this.toggleColumnDropdown(e.currentTarget, column);
+                });
+
+                wrapper.appendChild(label);
+                const sortCol = this.largeSort && this.largeSort.column;
+                const sortDir = this.largeSort && this.largeSort.direction;
+                if (sortCol === column && sortDir) {
+                    const sortIcon = document.createElement('i');
+                    sortIcon.className = sortDir === 'asc' ? 'fas fa-sort-up column-sort-icon' : 'fas fa-sort-down column-sort-icon';
+                    sortIcon.title = sortDir === 'asc' ? 'Sorted ascending' : 'Sorted descending';
+                    wrapper.appendChild(sortIcon);
+                }
+                wrapper.appendChild(arrowBtn);
+
+                const dropdownMenu = document.createElement('div');
+                dropdownMenu.className = 'column-dropdown-menu';
+                dropdownMenu.setAttribute('role', 'menu');
+                dropdownMenu.setAttribute('data-column', column);
+                const currentOp = (this.largeFilter && this.largeFilter.column === column) ? this.largeFilter.operator : 'equals';
+                const currentVal = (this.largeFilter && this.largeFilter.column === column) ? (this.largeFilter.value || '') : '';
+                dropdownMenu.innerHTML = `
+                    <button type="button" class="column-menu-item" data-action="sort-asc" role="menuitem"><i class="fas fa-sort-alpha-down"></i> Sort A → Z</button>
+                    <button type="button" class="column-menu-item" data-action="sort-desc" role="menuitem"><i class="fas fa-sort-alpha-down-alt"></i> Sort Z → A</button>
+                    <div class="column-menu-divider"></div>
+                    <button type="button" class="column-menu-item column-filter-toggle" data-column="${column}" role="menuitem">
+                        <i class="fas fa-filter"></i> Filter
+                        <i class="fas fa-chevron-right column-filter-chevron"></i>
+                    </button>
+                    <div class="column-filter-section" data-column="${column}" style="display: none;">
+                        <div class="column-filter-controls">
+                            <select class="column-filter-operator" data-column="${column}">
+                                <option value="equals" ${currentOp === 'equals' ? 'selected' : ''}>Equals</option>
+                                <option value="not_equals" ${currentOp === 'not_equals' ? 'selected' : ''}>Not Equals</option>
+                                <option value="greater_than" ${currentOp === 'greater_than' ? 'selected' : ''}>Greater Than</option>
+                                <option value="less_than" ${currentOp === 'less_than' ? 'selected' : ''}>Less Than</option>
+                                <option value="contains" ${currentOp === 'contains' ? 'selected' : ''}>Contains</option>
+                                <option value="not_contains" ${currentOp === 'not_contains' ? 'selected' : ''}>Not Contains</option>
+                            </select>
+                            <input type="text" class="column-filter-value" data-column="${column}" placeholder="Enter value..." />
+                            <div class="column-filter-actions">
+                                <button type="button" class="btn btn-sm btn-primary column-filter-apply" data-column="${column}">Apply</button>
+                                <button type="button" class="btn btn-sm btn-secondary column-filter-clear" data-column="${column}">Clear</button>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" class="column-menu-item" data-action="stats" role="menuitem"><i class="fas fa-chart-bar"></i> Column statistics</button>
+                `;
+                dropdownMenu.querySelector('.column-filter-value').value = currentVal;
+
+                const filterToggle = dropdownMenu.querySelector('.column-filter-toggle');
+                const filterSection = dropdownMenu.querySelector('.column-filter-section');
+                filterToggle.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const isExpanded = filterSection.style.display !== 'none';
+                    filterSection.style.display = isExpanded ? 'none' : 'block';
+                    filterToggle.querySelector('.column-filter-chevron').style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
+                    if (!isExpanded) {
+                        filterSection.querySelector('.column-filter-value').focus();
+                    }
+                });
+
+                const filterApplyBtn = dropdownMenu.querySelector('.column-filter-apply');
+                filterApplyBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const operator = dropdownMenu.querySelector('.column-filter-operator').value;
+                    const value = dropdownMenu.querySelector('.column-filter-value').value;
+                    if (!value) {
+                        this.showNotification('Please enter a filter value', 'warning');
+                        return;
+                    }
+                    this.applyColumnFilter(column, operator, value);
+                    dropdownMenu.classList.remove('open');
+                    this.activeColumnDropdown = null;
+                });
+
+                const filterClearBtn = dropdownMenu.querySelector('.column-filter-clear');
+                filterClearBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    dropdownMenu.querySelector('.column-filter-value').value = '';
+                    dropdownMenu.querySelector('.column-filter-operator').value = 'equals';
+                    this.clearFilters();
+                    dropdownMenu.classList.remove('open');
+                    this.activeColumnDropdown = null;
+                });
+
+                dropdownMenu.querySelectorAll('.column-menu-item[data-action]').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const action = btn.dataset.action;
+                        const wr = btn.closest('.column-header-wrapper');
+                        const menu = wr?.querySelector('.column-dropdown-menu');
+                        if (menu) menu.classList.remove('open');
+                        this.activeColumnDropdown = null;
+                        this.openColumnMenu(column, action);
+                    });
+                });
+                wrapper.appendChild(dropdownMenu);
+                th.appendChild(wrapper);
                 headerRow.appendChild(th);
             });
             tableHeader.appendChild(headerRow);
@@ -1942,8 +2056,9 @@ class AlchemistApp {
             
             console.log('Download parameters:', { format, filename });
 
-            // Handle TSV, HTML, and SQL formats client-side (not supported by backend)
-            if (format === 'tsv' || format === 'html' || format === 'sql') {
+            // Handle TSV, HTML, and SQL (normal mode only) client-side; SQL in large mode goes to backend
+            const sqlLargeMode = format === 'sql' && this.largeMode;
+            if (!sqlLargeMode && (format === 'tsv' || format === 'html' || format === 'sql')) {
                 const data = this.filteredData || this.currentData;
                 if (!data || data.length === 0) {
                     throw new Error('No data to download');
@@ -2086,11 +2201,15 @@ class AlchemistApp {
                     reject(new Error('Download cancelled'));
                 });
 
-                // Send request
-                xhr.send(JSON.stringify({
+                // Send request (include session_id for large-mode SQL export)
+                const payload = {
                     format: format,
                     filename: filename.replace(/\.[^.]+$/, '') // Remove extension, backend will add it
-                }));
+                };
+                if (format === 'sql' && this.largeMode && this.currentSession) {
+                    payload.session_id = this.currentSession;
+                }
+                xhr.send(JSON.stringify(payload));
             });
         } catch (error) {
             console.error('Download error:', error);
@@ -2797,17 +2916,21 @@ class AlchemistApp {
     downloadDataAsSQL(data, filename = 'data.sql', tableName = 'exported_data') {
         if (!data || data.length === 0) return;
         const safeName = (s) => String(s).replace(/[^a-zA-Z0-9_]/g, '_') || 'col';
+        const backtick = (name) => '`' + String(name).replace(/`/g, '``') + '`';
+        // MySQL-compatible string escape: \ and '
         const escape = (v) => {
             if (v === null || v === undefined) return 'NULL';
             const s = String(v);
-            return "'" + s.replace(/'/g, "''") + "'";
+            return "'" + s.replace(/\\/g, '\\\\').replace(/'/g, "''") + "'";
         };
         const headers = Object.keys(data[0]);
         const safeHeaders = headers.map((h, i) => safeName(h) || 'col_' + i);
-        const createTable = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n  ${safeHeaders.map((h, i) => `"${h}" TEXT`).join(',\n  ')}\n);\n\n`;
+        const tableId = backtick(safeName(tableName) || 'exported_data');
+        const dbName = backtick('alchemist_export');
+        const createTable = `-- MySQL-compatible export (run entire script in MySQL Workbench)\nCREATE DATABASE IF NOT EXISTS ${dbName};\nUSE ${dbName};\n\nCREATE TABLE IF NOT EXISTS ${tableId} (\n  ${safeHeaders.map(h => `${backtick(h)} TEXT`).join(',\n  ')}\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n\n`;
         const insertLines = data.map(row => {
             const values = headers.map(h => escape(row[h]));
-            return `INSERT INTO "${tableName}" (${safeHeaders.map(h => `"${h}"`).join(', ')}) VALUES (${values.join(', ')});`;
+            return `INSERT INTO ${tableId} (${safeHeaders.map(h => backtick(h)).join(', ')}) VALUES (${values.join(', ')});`;
         });
         const sql = createTable + insertLines.join('\n');
         const blob = new Blob([sql], { type: 'text/plain;charset=utf-8;' });

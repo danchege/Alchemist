@@ -19,7 +19,7 @@ from datetime import datetime
 
 # Add utils to path for helper functions
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from utils.helpers import replace_nan_with_none
+from utils.helpers import replace_nan_with_none, export_to_mysql_sql
 
 
 class DataHandler:
@@ -753,6 +753,12 @@ class DataHandler:
                 data_dict = self.data.to_dict('records')
                 output = json.dumps(replace_nan_with_none(data_dict), indent=2)
                 return {'success': True, 'data': output, 'filename': f'{filename}.json'}
+            elif format_type == 'sql':
+                columns = list(self.data.columns)
+                rows = (replace_nan_with_none(r) for r in self.data.to_dict('records'))
+                table_name = (filename or 'exported_data').strip()
+                output = export_to_mysql_sql(columns, rows, table_name=table_name)
+                return {'success': True, 'data': output, 'filename': f'{filename}.sql'}
             else:
                 return {'success': False, 'error': f'Unsupported format: {format_type}'}
                 

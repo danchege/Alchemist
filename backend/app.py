@@ -7,6 +7,7 @@ data upload, cleaning, transformation, visualization, and export operations.
 
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
+from werkzeug.exceptions import RequestEntityTooLarge
 import os
 import sys
 import json
@@ -101,14 +102,14 @@ from utils.helpers import (
     get_file_type, validate_file_size, validate_dataframe_structure,
     sanitize_column_names, create_data_preview, create_operation_log,
     save_session_data, load_session_data, generate_unique_id,
-    export_to_format, replace_nan_with_none
+    export_to_format, export_to_mysql_sql, replace_nan_with_none
 )
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend communication
 
-# Configuration
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
+# Configuration (restart server after changing; 512MB allows large CSVs)
+app.config['MAX_CONTENT_LENGTH'] = 512 * 1024 * 1024  # 512MB max file size
 app.config['LARGE_FILE_THRESHOLD_BYTES'] = 25 * 1024 * 1024
 
 _IS_FROZEN = getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
@@ -140,6 +141,20 @@ stats_calculator = StatisticsCalculator()
 # Session management
 sessions = {}
 
+@app.errorhandler(RequestEntityTooLarge)
+def handle_request_entity_too_large(e):
+    """Return JSON when upload exceeds MAX_CONTENT_LENGTH (413)."""
+    return jsonify({
+        'success': False,
+        'error': '413 Request Entity Too Large: The data value transmitted exceeds the capacity limit.',
+        'detail': f'Maximum upload size is {app.config["MAX_CONTENT_LENGTH"] // (1024 * 1024)}MB.'
+    }), 413
+
+@app.route('/favicon.ico')
+def favicon():
+    """Avoid 404 for browser favicon requests."""
+    return '', 204
+
 @app.route('/')
 def index():
     """Serve the frontend index page"""
@@ -148,6 +163,8 @@ def index():
 @app.route('/<path:filename>')
 def static_files(filename):
     """Serve static frontend files"""
+    if filename == 'favicon.ico':
+        return '', 204
     return send_from_directory(_FRONTEND_DIR, filename)
 
 @app.route('/api/health', methods=['GET'])
@@ -1286,8 +1303,9 @@ def download_data():
     
     Expected JSON payload:
     {
-        "format": "csv|excel|json",
-        "filename": "optional_filename"
+        "format": "csv|excel|json|sql",
+        "filename": "optional_filename",
+        "session_id": "optional - required for SQL export in large (SQLite) mode"
     }
     """
     try:
@@ -1297,22 +1315,81 @@ def download_data():
             return jsonify({'success': False, 'error': 'No format specified'}), 400
         
         format_type = data['format']
-        filename = data.get('filename')
-        
-        # Check if data is available
+        filename = data.get('filename') or 'exported_data'
+        session_id = data.get('session_id')
+
+        # SQL export: support both in-memory and large (SQLite) mode with MySQL-compatible output
+        if format_type == 'sql':
+            table_name = (filename or 'exported_data').strip()
+            out_filename = f'{filename}.sql' if not filename.endswith('.sql') else filename
+            if not out_filename.endswith('.sql'):
+                out_filename = out_filename + '.sql'
+
+            if session_id and session_id in sessions and sessions[session_id].get('large_mode'):
+                lf = sessions[session_id].get('large_file', {})
+                if lf.get('engine') != 'sqlite':
+                    return jsonify({'success': False, 'error': 'Large mode engine not supported for SQL export'}), 400
+                sqlite_path = lf.get('sqlite_path')
+                table_name_sqlite = lf.get('sqlite_table')
+                columns = lf.get('columns', [])
+                if not sqlite_path or not table_name_sqlite or not os.path.exists(sqlite_path):
+                    return jsonify({'success': False, 'error': 'Large SQLite database not found on server'}), 400
+                conn = sqlite3.connect(sqlite_path)
+                try:
+                    conn.row_factory = sqlite3.Row
+                    cur = conn.execute(f'SELECT * FROM "{table_name_sqlite}"')
+                    def row_gen():
+                        for row in cur:
+                            yield {k: row[k] for k in row.keys()}
+                    sql_str = export_to_mysql_sql(columns, row_gen(), table_name=table_name)
+                finally:
+                    conn.close()
+                file_obj = io.BytesIO(sql_str.encode('utf-8'))
+                file_obj.seek(0)
+                response = send_file(
+                    file_obj,
+                    as_attachment=True,
+                    download_name=out_filename,
+                    mimetype='text/plain; charset=utf-8'
+                )
+                response.headers['Access-Control-Allow-Origin'] = '*'
+                response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+                return response
+            elif data_handler.data is not None:
+                export_result = data_handler.export_data('sql', (filename or 'exported_data').replace('.sql', ''))
+                if not export_result['success']:
+                    return jsonify(export_result), 400
+                file_obj = io.BytesIO(export_result['data'].encode('utf-8'))
+                file_obj.seek(0)
+                response = send_file(
+                    file_obj,
+                    as_attachment=True,
+                    download_name=export_result['filename'],
+                    mimetype='text/plain; charset=utf-8'
+                )
+                response.headers['Access-Control-Allow-Origin'] = '*'
+                response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+                response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+                return response
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': 'No data available to download. Please upload a file first.'
+                }), 400
+
+        # Non-SQL: require in-memory data
         if data_handler.data is None:
             return jsonify({
                 'success': False,
                 'error': 'No data available to download. Please upload a file first.'
             }), 400
         
-        # Export data
         export_result = data_handler.export_data(format_type, filename)
         
         if not export_result['success']:
             return jsonify(export_result), 400
         
-        # Return file for download
         try:
             if format_type == 'excel':
                 file_obj = io.BytesIO(export_result['data'])
@@ -1324,7 +1401,7 @@ def download_data():
                 file_obj = io.BytesIO(export_result['data'].encode('utf-8'))
                 mimetype = 'text/csv'
             
-            file_obj.seek(0)  # Ensure we're at the start of the file
+            file_obj.seek(0)
             
             file_size = len(export_result['data']) if isinstance(export_result['data'], (str, bytes)) else len(file_obj.getvalue())
             print(f"Downloading file: {export_result['filename']}, size: {file_size} bytes, format: {format_type}")
@@ -1335,12 +1412,9 @@ def download_data():
                 download_name=export_result['filename'],
                 mimetype=mimetype
             )
-            
-            # Add CORS headers for file download
             response.headers['Access-Control-Allow-Origin'] = '*'
             response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
             response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-            
             return response
         except Exception as file_error:
             print(f"Error creating file object: {file_error}")
@@ -1515,6 +1589,7 @@ def internal_error(e):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     print("Starting Alchemist - Data Cleaning Tool")
+    print(f"Max upload size: {app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)}MB")
     print(f"Upload folder: {app.config['UPLOAD_FOLDER']}")
     print(f"Session folder: {app.config['SESSION_FOLDER']}")
     print(f"Server running on http://0.0.0.0:{port}")
