@@ -157,6 +157,31 @@ To build an offline executable (PyInstaller):
 
 The executable will be in `dist/Alchemist/`.
 
+### Option 2b: Run using `alchemist.bat` (Windows)
+
+From the project root in Command Prompt or PowerShell:
+
+```cmd
+alchemist.bat run
+```
+
+Then open **http://127.0.0.1:5000**.
+
+By default, Alchemist will also try to open your browser automatically. To disable this behavior:
+
+```cmd
+set ALCH_OPEN_BROWSER=0
+alchemist.bat run
+```
+
+To build an offline executable (PyInstaller):
+
+```cmd
+alchemist.bat build
+```
+
+The executable will be in `dist\Alchemist.exe`.
+
 ### Run the Linux executable (release build)
 
 If you downloaded a prebuilt Linux release archive (for example `Alchemist-linux-x86_64.tar.gz`), extract it and run the bundled executable:
