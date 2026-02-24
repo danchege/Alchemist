@@ -707,6 +707,25 @@ class DataHandler:
                     group_by = transformation.get('group_by', [])
                     aggregations = transformation.get('aggregations', {})
                     self.data = self.data.groupby(group_by).agg(aggregations).reset_index()
+
+                elif op_type == 'change_type':
+                    column = transformation.get('column')
+                    target_type = (transformation.get('target_type') or '').lower()
+                    if column not in self.data.columns:
+                        continue
+
+                    if target_type in ('number', 'numeric', 'float', 'int'):
+                        # Coerce to numeric, invalid values become NaN
+                        self.data[column] = pd.to_numeric(self.data[column], errors='coerce')
+                    elif target_type in ('text', 'string'):
+                        self.data[column] = self.data[column].astype(str)
+                    elif target_type in ('bool', 'boolean'):
+                        self.data[column] = self.data[column].astype(bool)
+                    elif target_type in ('date', 'datetime'):
+                        self.data[column] = pd.to_datetime(self.data[column], errors='coerce')
+                    else:
+                        # Fallback: let pandas interpret the dtype string
+                        self.data[column] = self.data[column].astype(transformation.get('target_type'))
                     
             # Convert DataFrame to dict and replace NaN with None for JSON serialization
             data_dict = self.data.to_dict('records')

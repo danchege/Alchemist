@@ -20,6 +20,9 @@ class AlchemistApp {
         this.largeTotalRows = 0;
         this.largeFilter = null;
         this.largeSort = null;
+        // Used for visualization inference in large mode
+        this.largeColumns = [];
+        this.largeSampleRows = [];
         this.viewHistory = [];
         this.viewRedoStack = [];
         this.maxViewHistory = 30;
@@ -250,6 +253,11 @@ class AlchemistApp {
 
         // Update column selectors
         this.updateColumnSelectors(data.data_info.columns);
+
+        // Reset viz UI and render recommendations for this dataset
+        const plotTypeEl = document.getElementById('plotType');
+        if (plotTypeEl) plotTypeEl.value = '';
+        this.updatePlotParameters();
 
         // Show table view
         this.switchView('table');
@@ -632,6 +640,11 @@ class AlchemistApp {
                     </div>
                 </div>
                 <button type="button" class="column-menu-item" data-action="stats" role="menuitem"><i class="fas fa-chart-bar"></i> Column statistics</button>
+                <div class="column-menu-divider"></div>
+                <button type="button" class="column-menu-item" data-action="rename-column" role="menuitem"><i class="fas fa-i-cursor"></i> Rename column…</button>
+                <button type="button" class="column-menu-item" data-action="change-type" role="menuitem"><i class="fas fa-exchange-alt"></i> Change type…</button>
+                <button type="button" class="column-menu-item" data-action="duplicate-column" role="menuitem"><i class="fas fa-clone"></i> New column from this</button>
+                <button type="button" class="column-menu-item" data-action="drop-column" role="menuitem"><i class="fas fa-trash-alt"></i> Drop this column</button>
             `;
             
             // Handle filter toggle
@@ -771,6 +784,8 @@ class AlchemistApp {
             const pageData = result.data || [];
             const columns = result.columns || (pageData[0] ? Object.keys(pageData[0]) : []);
             this.largeTotalRows = typeof result.total_rows === 'number' ? result.total_rows : this.largeTotalRows;
+            this.largeColumns = columns;
+            this.largeSampleRows = pageData;
 
             if (columns.length === 0) {
                 tableInfo.textContent = 'No data to display';
@@ -851,6 +866,11 @@ class AlchemistApp {
                         </div>
                     </div>
                     <button type="button" class="column-menu-item" data-action="stats" role="menuitem"><i class="fas fa-chart-bar"></i> Column statistics</button>
+                    <div class="column-menu-divider"></div>
+                    <button type="button" class="column-menu-item" data-action="rename-column" role="menuitem"><i class="fas fa-i-cursor"></i> Rename column…</button>
+                    <button type="button" class="column-menu-item" data-action="change-type" role="menuitem"><i class="fas fa-exchange-alt"></i> Change type…</button>
+                    <button type="button" class="column-menu-item" data-action="duplicate-column" role="menuitem"><i class="fas fa-clone"></i> New column from this</button>
+                    <button type="button" class="column-menu-item" data-action="drop-column" role="menuitem"><i class="fas fa-trash-alt"></i> Drop this column</button>
                 `;
                 dropdownMenu.querySelector('.column-filter-value').value = currentVal;
 
@@ -1041,9 +1061,21 @@ class AlchemistApp {
         }
         this.activeColumnDropdown = null;
         
-        if (action === 'sort-asc') this.sortTable(column, 'asc');
-        else if (action === 'sort-desc') this.sortTable(column, 'desc');
-        else if (action === 'stats') this.openStatsForColumn(column);
+        if (action === 'sort-asc') {
+            this.sortTable(column, 'asc');
+        } else if (action === 'sort-desc') {
+            this.sortTable(column, 'desc');
+        } else if (action === 'stats') {
+            this.openStatsForColumn(column);
+        } else if (action === 'drop-column') {
+            this.confirmDropColumn(column);
+        } else if (action === 'rename-column') {
+            this.showRenameColumnModal(column);
+        } else if (action === 'change-type') {
+            this.showChangeTypeModal(column);
+        } else if (action === 'duplicate-column') {
+            this.showDuplicateColumnModal(column);
+        }
     }
 
     async applyColumnFilter(column, operator, value) {
@@ -1068,6 +1100,216 @@ class AlchemistApp {
         this.switchView('stats');
         this.loadStatistics();
         this.showNotification(`Statistics loaded. See "${column}" in the stats panels.`, 'info');
+    }
+
+    showRenameColumnModal(column) {
+        const modalBody = document.getElementById('modalBody');
+        const safeColumn = column || '';
+        modalBody.innerHTML = `
+            <div class="form-group">
+                <label for="renameColumnInput">New name for "<strong>${safeColumn}</strong>":</label>
+                <input id="renameColumnInput" class="form-control" type="text" value="${safeColumn}" />
+            </div>
+        `;
+
+        this.showModal('Rename column', () => this.renameColumn(column), 'Rename');
+
+        const input = document.getElementById('renameColumnInput');
+        if (input) {
+            input.focus();
+            input.select();
+        }
+    }
+
+    async renameColumn(column) {
+        const input = document.getElementById('renameColumnInput');
+        if (!input) return;
+
+        const newName = (input.value || '').trim();
+        if (!newName) {
+            this.showNotification('Please enter a new column name.', 'warning');
+            return;
+        }
+        if (newName === column) {
+            this.closeModal();
+            return;
+        }
+
+        return this.applyTransformations(
+            [{
+                type: 'rename_column',
+                old_name: column,
+                new_name: newName
+            }],
+            `Column "${column}" renamed to "${newName}".`
+        );
+    }
+
+    showChangeTypeModal(column) {
+        const modalBody = document.getElementById('modalBody');
+        modalBody.innerHTML = `
+            <div class="form-group">
+                <label for="changeTypeSelect">Change type of "<strong>${column}</strong>" to:</label>
+                <select id="changeTypeSelect" class="form-control">
+                    <option value="numeric">Numeric</option>
+                    <option value="text">Text</option>
+                    <option value="date">Date/Time</option>
+                    <option value="bool">Boolean</option>
+                </select>
+            </div>
+        `;
+
+        this.showModal('Change column type', () => this.changeColumnType(column), 'Change type');
+    }
+
+    async changeColumnType(column) {
+        const select = document.getElementById('changeTypeSelect');
+        if (!select) return;
+
+        const targetType = select.value;
+        if (!targetType) {
+            this.showNotification('Please select a target type.', 'warning');
+            return;
+        }
+
+        return this.applyTransformations(
+            [{
+                type: 'change_type',
+                column,
+                target_type: targetType
+            }],
+            `Column "${column}" converted to ${targetType}.`
+        );
+    }
+
+    showDuplicateColumnModal(column) {
+        const modalBody = document.getElementById('modalBody');
+        const defaultName = `${column}_copy`;
+        modalBody.innerHTML = `
+            <div class="form-group">
+                <label for="duplicateColumnInput">New column name based on "<strong>${column}</strong>":</label>
+                <input id="duplicateColumnInput" class="form-control" type="text" value="${defaultName}" />
+            </div>
+        `;
+
+        this.showModal('New column from this one', () => this.duplicateColumn(column), 'Create column');
+
+        const input = document.getElementById('duplicateColumnInput');
+        if (input) {
+            input.focus();
+            input.select();
+        }
+    }
+
+    async duplicateColumn(column) {
+        const input = document.getElementById('duplicateColumnInput');
+        if (!input) return;
+
+        const newName = (input.value || '').trim();
+        if (!newName) {
+            this.showNotification('Please enter a new column name.', 'warning');
+            return;
+        }
+
+        return this.applyTransformations(
+            [{
+                type: 'create_column',
+                new_column: newName,
+                expression: column
+            }],
+            `New column "${newName}" created from "${column}".`
+        );
+    }
+
+    showRenameDropConfirmMessage(column) {
+        return `Are you sure you want to drop the column "${column}"? This action cannot be undone (except via the operation history).`;
+    }
+
+    showDropColumnModal(column) {
+        const modalBody = document.getElementById('modalBody');
+        modalBody.innerHTML = `
+            <p>${this.showRenameDropConfirmMessage(column)}</p>
+        `;
+
+        this.showModal('Drop column', () => this.dropColumn(column), 'Drop');
+    }
+
+    confirmDropColumn(column) {
+        this.showDropColumnModal(column);
+    }
+
+    async dropColumn(column) {
+        return this.applyTransformations(
+            [{
+                type: 'drop_column',
+                columns: [column]
+            }],
+            `Column "${column}" dropped.`
+        );
+    }
+
+    async applyTransformations(transformations, successMessage) {
+        try {
+            this.showLoading(true, 'Applying transformation', 'Updating column and refreshing preview...');
+
+            const response = await fetch(`${this.apiBase}/transform`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    session_id: this.currentSession,
+                    transformations
+                })
+            });
+
+            const result = await response.json();
+
+            if (!result.success) {
+                throw new Error(result.error || 'Transform failed');
+            }
+
+            // Reset any client-side filters/sorts that may reference old column names
+            if (this.largeMode) {
+                this.largeSort = null;
+                this.largeFilter = null;
+                this.currentPage = 1;
+
+                // Update large-mode metadata from server response if available
+                if (Array.isArray(result.columns)) {
+                    this.largeColumns = result.columns;
+                }
+                if (Array.isArray(result.shape) && typeof result.shape[0] === 'number') {
+                    this.largeTotalRows = result.shape[0];
+                }
+            } else {
+                this.currentData = result.data;
+                this.filteredData = null;
+            }
+
+            const columns = Array.isArray(result.columns)
+                ? result.columns
+                : (!this.largeMode && this.currentData && this.currentData[0]
+                    ? Object.keys(this.currentData[0])
+                    : []);
+
+            if (columns && columns.length) {
+                this.updateColumnSelectors(columns);
+            }
+
+            this.renderTable();
+            this.loadOperationHistory?.();
+
+            if (successMessage) {
+                this.showNotification(successMessage, 'success');
+            }
+
+            this.closeModal();
+        } catch (error) {
+            this.showNotification(error.message || 'Failed to apply transformation', 'error');
+        } finally {
+            this.showLoading(false);
+        }
     }
 
     sortTable(column, direction = 'asc', skipViewHistory = false) {
@@ -1546,12 +1788,15 @@ class AlchemistApp {
         const plotType = document.getElementById('plotType').value;
         const parametersContainer = document.getElementById('plotParameters');
         
+        // Always show recommendations (if any), even before selecting a plot type
+        parametersContainer.innerHTML = '';
+        this.renderVizRecommendations(parametersContainer);
+
         if (!plotType) {
-            parametersContainer.innerHTML = '';
             return;
         }
 
-        const columns = this.currentData ? Object.keys(this.currentData[0]) : [];
+        const columns = this.getColumnsForViz();
         const numericColumns = this.getNumericColumns();
 
         let parametersHTML = '';
@@ -1642,8 +1887,7 @@ class AlchemistApp {
                 `;
                 break;
         }
-
-        parametersContainer.innerHTML = parametersHTML;
+        parametersContainer.insertAdjacentHTML('beforeend', parametersHTML);
     }
 
     async createPlot() {
@@ -2344,13 +2588,144 @@ class AlchemistApp {
     }
 
     // Utility methods
-    getNumericColumns() {
+    getColumnsForViz() {
+        if (this.largeMode) return Array.isArray(this.largeColumns) ? this.largeColumns : [];
         if (!this.currentData || this.currentData.length === 0) return [];
-        
-        return Object.keys(this.currentData[0]).filter(column => {
-            const values = this.currentData.map(row => row[column]).filter(val => val !== null && val !== '');
-            return values.length > 0 && values.every(val => !isNaN(val));
+        return Object.keys(this.currentData[0]);
+    }
+
+    getSampleRowsForViz() {
+        if (this.largeMode) return Array.isArray(this.largeSampleRows) ? this.largeSampleRows : [];
+        return Array.isArray(this.currentData) ? this.currentData : [];
+    }
+
+    inferColumnKinds() {
+        const columns = this.getColumnsForViz();
+        const rows = this.getSampleRowsForViz();
+        const numeric = [];
+        const datetime = [];
+        const categorical = [];
+
+        const sampleSize = Math.min(rows.length, 200);
+        const sample = rows.slice(0, sampleSize);
+
+        const cleanVals = (vals) =>
+            vals
+                .map(v => (v === null || v === undefined) ? '' : String(v).trim())
+                .filter(s => s !== '');
+
+        const isLikelyNumeric = (vals) => {
+            const clean = cleanVals(vals);
+            if (clean.length === 0) return false;
+            const ok = clean.filter(v => !isNaN(Number(v))).length;
+            return ok / clean.length >= 0.9;
+        };
+
+        const isLikelyDatetime = (vals) => {
+            const clean = cleanVals(vals);
+            if (clean.length === 0) return false;
+            // Avoid treating pure numbers as dates (e.g. IDs)
+            const nonNumeric = clean.filter(v => isNaN(Number(v)));
+            if (nonNumeric.length === 0) return false;
+            const ok = nonNumeric.filter(v => !isNaN(Date.parse(v))).length;
+            return ok / nonNumeric.length >= 0.8;
+        };
+
+        columns.forEach(col => {
+            const vals = sample.map(r => (r ? r[col] : null));
+            if (isLikelyNumeric(vals)) numeric.push(col);
+            else if (isLikelyDatetime(vals)) datetime.push(col);
+            else categorical.push(col);
         });
+
+        return { columns, numeric, datetime, categorical };
+    }
+
+    getNumericColumns() {
+        return this.inferColumnKinds().numeric;
+    }
+
+    getDatetimeColumns() {
+        return this.inferColumnKinds().datetime;
+    }
+
+    getCategoricalColumns() {
+        return this.inferColumnKinds().categorical;
+    }
+
+    getVizPresets() {
+        const { numeric, datetime, categorical } = this.inferColumnKinds();
+        const presets = [];
+        if (numeric.length >= 1) presets.push({ id: 'histogram', label: 'Histogram' });
+        if (numeric.length >= 2) presets.push({ id: 'scatter', label: 'Scatter' });
+        if (categorical.length >= 1) presets.push({ id: 'bar', label: 'Bar (Top categories)' });
+        if (categorical.length >= 1) presets.push({ id: 'pie', label: 'Pie (Top categories)' });
+        if (datetime.length >= 1 && numeric.length >= 1) presets.push({ id: 'line', label: 'Line (Trend)' });
+        if (numeric.length >= 3) presets.push({ id: 'heatmap', label: 'Correlation heatmap' });
+        return presets;
+    }
+
+    renderVizRecommendations(containerEl) {
+        if (!containerEl) return;
+        const presets = this.getVizPresets();
+        if (!presets || presets.length === 0) {
+            containerEl.insertAdjacentHTML('afterbegin', `
+                <div class="form-group" style="margin-bottom: 10px;">
+                    <div style="font-size: 12px; opacity: 0.8;">Recommended charts will appear once a dataset is loaded.</div>
+                </div>
+            `);
+            return;
+        }
+
+        const buttons = presets
+            .map(p => `<button type="button" class="btn btn-sm btn-outline viz-preset-btn" data-preset="${p.id}" style="margin: 4px 6px 0 0;">${p.label}</button>`)
+            .join('');
+
+        containerEl.insertAdjacentHTML('afterbegin', `
+            <div class="form-group" style="margin-bottom: 10px;">
+                <div style="font-size: 12px; font-weight: 600; margin-bottom: 6px;">Recommended</div>
+                <div>${buttons}</div>
+            </div>
+        `);
+
+        containerEl.querySelectorAll('.viz-preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.applyVizPreset(btn.dataset.preset));
+        });
+    }
+
+    applyVizPreset(presetId) {
+        const { numeric, datetime, categorical } = this.inferColumnKinds();
+        const plotTypeEl = document.getElementById('plotType');
+        if (!plotTypeEl) return;
+
+        plotTypeEl.value = presetId;
+        this.updatePlotParameters();
+
+        if (presetId === 'histogram') {
+            const el = document.getElementById('histColumn');
+            if (el && numeric[0]) el.value = numeric[0];
+        } else if (presetId === 'scatter') {
+            const x = document.getElementById('scatterX');
+            const y = document.getElementById('scatterY');
+            if (x && numeric[0]) x.value = numeric[0];
+            if (y && numeric[1]) y.value = numeric[1];
+        } else if (presetId === 'bar') {
+            const el = document.getElementById('barColumn');
+            if (el && categorical[0]) el.value = categorical[0];
+        } else if (presetId === 'pie') {
+            const el = document.getElementById('pieColumn');
+            if (el && categorical[0]) el.value = categorical[0];
+        } else if (presetId === 'line') {
+            const x = document.getElementById('lineX');
+            const y = document.getElementById('lineY');
+            if (x && (datetime[0] || categorical[0])) x.value = datetime[0] || categorical[0];
+            if (y && numeric.length > 0) y.value = numeric.slice(0, 3).join(', ');
+        } else if (presetId === 'heatmap') {
+            const el = document.getElementById('heatmapColumns');
+            if (el && numeric.length > 0) el.value = numeric.slice(0, 6).join(', ');
+        }
+
+        this.showNotification('Visualization preset applied. Click \"Create Plot\" to render.', 'info');
     }
 
     showModal(title, onConfirm, confirmText = 'Confirm') {

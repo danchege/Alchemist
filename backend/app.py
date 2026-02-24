@@ -676,8 +676,143 @@ def transform_data():
         
         transformations = data['transformations']
         session_id = data.get('session_id')
-        
-        # Apply transformations
+
+        # Large file mode: perform transformations directly in SQLite
+        if session_id and session_id in sessions and sessions[session_id].get('large_mode'):
+            lf = sessions[session_id].get('large_file', {})
+            if lf.get('engine') != 'sqlite':
+                return jsonify({
+                    'success': False,
+                    'error': 'Large mode engine not supported for transform.'
+                }), 400
+
+            sqlite_path = lf.get('sqlite_path')
+            table_name = lf.get('sqlite_table')
+            columns = lf.get('columns', [])
+
+            if not sqlite_path or not table_name or not os.path.exists(sqlite_path):
+                return jsonify({
+                    'success': False,
+                    'error': 'Large SQLite database not found on server.'
+                }), 400
+
+            if not columns:
+                return jsonify({
+                    'success': False,
+                    'error': 'Large file metadata is missing columns.'
+                }), 400
+
+            conn = sqlite3.connect(sqlite_path)
+            try:
+                for transformation in transformations:
+                    op_type = transformation.get('type')
+
+                    if op_type == 'drop_column':
+                        cols_to_drop = transformation.get('columns') or []
+                        cols_to_drop = [c for c in cols_to_drop if c in columns]
+                        if not cols_to_drop:
+                            continue
+
+                        remaining = [c for c in columns if c not in cols_to_drop]
+                        if not remaining:
+                            return jsonify({
+                                'success': False,
+                                'error': 'Cannot drop all columns from the table.'
+                            }), 400
+
+                        tmp_table = f'{table_name}__dropcol_{generate_unique_id().replace("-", "")}'[:63]
+                        select_cols = ','.join([f'"{c}"' for c in remaining])
+                        conn.execute(f'CREATE TABLE "{tmp_table}" AS SELECT {select_cols} FROM "{table_name}"')
+                        conn.execute(f'DROP TABLE "{table_name}"')
+                        conn.execute(f'ALTER TABLE "{tmp_table}" RENAME TO "{table_name}"')
+                        columns = remaining
+
+                    elif op_type == 'rename_column':
+                        old_name = transformation.get('old_name')
+                        new_name = transformation.get('new_name')
+                        if not old_name or not new_name or old_name not in columns:
+                            continue
+
+                        conn.execute(
+                            f'ALTER TABLE "{table_name}" RENAME COLUMN "{old_name}" TO "{new_name}"'
+                        )
+                        columns = [new_name if c == old_name else c for c in columns]
+
+                    elif op_type == 'create_column':
+                        new_column = transformation.get('new_column')
+                        expression = transformation.get('expression')
+                        if not new_column or not expression:
+                            continue
+
+                        source_col = expression
+                        if source_col not in columns:
+                            return jsonify({
+                                'success': False,
+                                'error': f'create_column is only supported for expressions that reference a single existing column in large mode (got "{expression}").'
+                            }), 400
+
+                        if new_column in columns:
+                            return jsonify({
+                                'success': False,
+                                'error': f'Column "{new_column}" already exists.'
+                            }), 400
+
+                        conn.execute(f'ALTER TABLE "{table_name}" ADD COLUMN "{new_column}"')
+                        conn.execute(
+                            f'UPDATE "{table_name}" SET "{new_column}" = "{source_col}"'
+                        )
+                        columns.append(new_column)
+
+                    elif op_type == 'change_type':
+                        # Not yet supported for large (SQLite) mode
+                        return jsonify({
+                            'success': False,
+                            'error': 'change_type is not available in large file mode yet.'
+                        }), 400
+
+                    else:
+                        return jsonify({
+                            'success': False,
+                            'error': f'Operation not supported in large mode: {op_type}'
+                        }), 400
+
+                conn.commit()
+
+                total_rows = conn.execute(
+                    f'SELECT COUNT(1) FROM "{table_name}"'
+                ).fetchone()[0]
+                preview_rows = _sqlite_fetch_dicts(
+                    conn,
+                    f'SELECT * FROM "{table_name}" LIMIT 100',
+                    ()
+                )
+            finally:
+                conn.close()
+
+            lf['columns'] = list(columns)
+            # Reset dtypes metadata – keep keys aligned with columns
+            old_dtypes = lf.get('dtypes', {})
+            lf['dtypes'] = {str(c): old_dtypes.get(str(c), 'unknown') for c in columns}
+            lf['total_rows'] = int(total_rows)
+            sessions[session_id]['large_file'] = lf
+            sessions[session_id]['last_transformed'] = datetime.now().isoformat()
+            save_session_data(session_id, sessions[session_id], app.config['SESSION_FOLDER'])
+
+            operation_log = create_operation_log('transform', {
+                'transformations': transformations,
+                'large_mode': True
+            })
+
+            return jsonify({
+                'success': True,
+                'data': replace_nan_with_none(preview_rows),
+                'shape': [int(total_rows), len(columns)],
+                'columns': list(columns),
+                'operation_log': operation_log,
+                'note': 'Large file mode: returned data is a preview of the first 100 rows'
+            })
+
+        # In-memory mode: use DataHandler / pandas
         transform_result = data_handler.transform_data(transformations)
         
         if transform_result['success']:
