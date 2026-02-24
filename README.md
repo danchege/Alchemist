@@ -13,11 +13,11 @@ Alchemist is a web-based data cleaning and transformation tool built with a Pyth
 - [Project Structure](#project-structure)
 - [Installation & Setup](#installation--setup)
   - [Option 1: Windows Installer](#option-1-windows-installer-easiest-for-windows-users)
-  - [Option 2: Linux Executable Download](#option-2-linux-executable-download-easiest-for-linux-users)
-  - [Option 3: Online Demo](#option-3-use-the-online-demo)
-  - [Option 4: Run using alchemist.sh](#option-4-run-using-alchemistsh-recommended-for-developers)
-  - [Option 5: Run using alchemist.bat](#option-5-run-using-alchemistbat-windows-development)
-  - [Option 6: Install (Linux)](#option-6-install-linux)
+  - [Option 2: Install (Linux)](#option-2-install-linux---easiest-for-linux-users)
+  - [Option 3: Linux Executable Download](#option-3-linux-executable-download-portable)
+  - [Option 4: Online Demo](#option-4-use-the-online-demo)
+  - [Option 5: Run using alchemist.sh](#option-5-run-using-alchemistsh-recommended-for-developers)
+  - [Option 6: Run using alchemist.bat](#option-6-run-using-alchemistbat-windows-development)
   - [Option 7: Manual setup](#option-7-manual-setup-create-venv-in-backend)
 - [Usage](#usage)
   - [1. Upload data](#1-upload-data)
@@ -212,9 +212,64 @@ The installer includes:
 
 After installation, Alchemist will open in your browser automatically at `http://127.0.0.1:5000`.
 
-### Option 2: Linux Executable Download (Easiest for Linux Users)
+### Option 2: Install (Linux) - Easiest for Linux Users
 
-**Recommended for Linux users who want a simple installation without Python setup.**
+**System-wide installation for Linux users - no Python setup required.**
+
+```bash
+# Download the latest release
+curl -L https://github.com/danchege/Alchemist/releases/latest/download/Alchemist-linux-x86_64.tar.gz -o Alchemist-linux-x86_64.tar.gz
+
+# Extract the archive
+tar -xzf Alchemist-linux-x86_64.tar.gz
+
+# Install globally
+cd Alchemist-linux-x86_64
+sudo ./install.sh
+
+# Run the application
+Alchemist
+```
+
+**To launch from terminal after installation:**
+```bash
+Alchemist
+```
+
+**Manual install (alternative):**
+
+```bash
+# Download and extract
+curl -L https://github.com/danchege/Alchemist/releases/latest/download/Alchemist-linux-x86_64.tar.gz -o Alchemist-linux-x86_64.tar.gz
+tar -xzf Alchemist-linux-x86_64.tar.gz
+
+# Manual installation
+sudo mkdir -p /opt/alchemist
+sudo rm -rf /opt/alchemist/Alchemist-linux-x86_64
+sudo mv Alchemist-linux-x86_64 /opt/alchemist/
+sudo ln -sf /opt/alchemist/Alchemist-linux-x86_64/Alchemist /usr/local/bin/Alchemist
+
+# Run the application
+Alchemist
+```
+
+**To launch from terminal after manual installation:**
+```bash
+Alchemist
+# OR directly from the installation path:
+/opt/alchemist/Alchemist-linux-x86_64/Alchemist
+```
+
+**Uninstall:**
+
+```bash
+cd /opt/alchemist/Alchemist-linux-x86_64
+sudo ./uninstall.sh
+```
+
+### Option 3: Linux Executable Download (Portable)
+
+**Recommended for Linux users who want a portable version without system installation.**
 
 1. Download the latest Linux executable from the [Releases page](https://github.com/danchege/Alchemist/releases/latest)
 2. Extract the archive:
@@ -242,13 +297,13 @@ PORT=5001 ./Alchemist
 ALCH_OPEN_BROWSER=0 ./Alchemist
 ```
 
-### Option 3: Use the online demo
+### Option 4: Use the online demo
 
 Open:
 
 https://alchemist-6qfo.onrender.com/
 
-### Option 4: Run using `alchemist.sh` (recommended for developers)
+### Option 5: Run using `alchemist.sh` (recommended for developers)
 
 From the project root:
 
@@ -273,7 +328,7 @@ To build an offline executable (PyInstaller):
 
 The executable will be in `dist/Alchemist/`.
 
-### Option 5: Run using `alchemist.bat` (Windows Development)
+### Option 6: Run using `alchemist.bat` (Windows Development)
 
 From the project root in Command Prompt or PowerShell:
 
@@ -297,49 +352,6 @@ alchemist.bat build
 ```
 
 The executable will be in `dist\Alchemist.exe`.
-
-### Option 6: Install (Linux)
-
-1. Download the latest release
-
-```bash
-curl -L https://github.com/danchege/Alchemist/releases/latest/download/Alchemist-linux-x86_64.tar.gz -o Alchemist-linux-x86_64.tar.gz
-```
-
-2. Extract the archive
-
-```bash
-tar -xzf Alchemist-linux-x86_64.tar.gz
-```
-
-3. Install globally
-
-```bash
-cd Alchemist-linux-x86_64
-sudo ./install.sh
-```
-
-Manual install (alternative):
-
-```bash
-sudo mkdir -p /opt/alchemist
-sudo rm -rf /opt/alchemist/Alchemist-linux-x86_64
-sudo mv Alchemist-linux-x86_64 /opt/alchemist/
-sudo ln -sf /opt/alchemist/Alchemist-linux-x86_64/Alchemist /usr/local/bin/Alchemist
-```
-
-4️⃣ Run
-
-```bash
-Alchemist
-```
-
-Uninstall:
-
-```bash
-cd /opt/alchemist/Alchemist-linux-x86_64
-sudo ./uninstall.sh
-```
 
 ### Option 7: Manual setup (create venv in `backend/`)
 
