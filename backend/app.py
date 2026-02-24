@@ -5,19 +5,90 @@ This is the main Flask application that provides REST API endpoints for
 data upload, cleaning, transformation, visualization, and export operations.
 """
 
-from flask import Flask, request, jsonify, send_file, send_from_directory
-from flask_cors import CORS
-from werkzeug.exceptions import RequestEntityTooLarge
-import os
-import sys
-import json
-import io
-import sqlite3
-import re
-import threading
-import webbrowser
-from datetime import datetime
-import traceback
+# Test basic imports first
+print("Testing basic imports...")
+try:
+    import os
+    print("✓ os imported")
+    import sys
+    print("✓ sys imported")
+    import json
+    print("✓ json imported")
+    import io
+    print("✓ io imported")
+    import re
+    print("✓ re imported")
+    import threading
+    print("✓ threading imported")
+    import webbrowser
+    print("✓ webbrowser imported")
+    from datetime import datetime
+    print("✓ datetime imported")
+    import traceback
+    print("✓ traceback imported")
+except Exception as e:
+    print(f"✗ Basic import failed: {e}")
+    input("Press Enter to exit...")
+    sys.exit(1)
+
+# Test Flask imports
+print("Testing Flask imports...")
+try:
+    from flask import Flask, request, jsonify, send_file, send_from_directory
+    print("✓ Flask imported")
+    from flask_cors import CORS
+    print("✓ Flask-CORS imported")
+    from werkzeug.exceptions import RequestEntityTooLarge
+    print("✓ werkzeug imported")
+except Exception as e:
+    print(f"✗ Flask import failed: {e}")
+    input("Press Enter to exit...")
+    sys.exit(1)
+
+# Test data science imports
+print("Testing data science imports...")
+try:
+    import sqlite3
+    print("✓ sqlite3 imported")
+    import pandas as pd
+    print("✓ pandas imported")
+    import numpy as np
+    print("✓ numpy imported")
+except Exception as e:
+    print(f"✗ Data science import failed: {e}")
+    input("Press Enter to exit...")
+    sys.exit(1)
+
+print("All imports successful!")
+
+# Test custom modules
+print("Testing custom modules...")
+try:
+    # Add modules to path
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    print("✓ Added modules to path")
+    
+    from modules.data_handler import DataHandler
+    print("✓ DataHandler imported")
+    from modules.visualization import Visualizer
+    print("✓ Visualizer imported")
+    from modules.stats import StatisticsCalculator
+    print("✓ StatisticsCalculator imported")
+    from utils.helpers import (
+        get_file_type, validate_file_size, validate_dataframe_structure,
+        sanitize_column_names, create_data_preview, create_operation_log,
+        save_session_data, load_session_data, generate_unique_id,
+        export_to_format, export_to_mysql_sql, replace_nan_with_none
+    )
+    print("✓ All helper functions imported")
+except Exception as e:
+    print(f"✗ Custom module import failed: {e}")
+    print("Traceback:")
+    traceback.print_exc()
+    input("Press Enter to exit...")
+    sys.exit(1)
+
+print("All modules imported successfully!")
 
 def _count_csv_data_rows(file_path: str) -> int:
     count = 0
@@ -95,16 +166,6 @@ def _fingerprint(value: str) -> str:
 # Add modules to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from modules.data_handler import DataHandler
-from modules.visualization import Visualizer
-from modules.stats import StatisticsCalculator
-from utils.helpers import (
-    get_file_type, validate_file_size, validate_dataframe_structure,
-    sanitize_column_names, create_data_preview, create_operation_log,
-    save_session_data, load_session_data, generate_unique_id,
-    export_to_format, export_to_mysql_sql, replace_nan_with_none
-)
-
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend communication
 
@@ -129,9 +190,28 @@ _FRONTEND_DIR = (
 app.config['UPLOAD_FOLDER'] = os.path.join(_RUNTIME_BASE_DIR, 'data')
 app.config['SESSION_FOLDER'] = os.path.join(app.config['UPLOAD_FOLDER'], 'sessions')
 
-# Ensure directories exist
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-os.makedirs(app.config['SESSION_FOLDER'], exist_ok=True)
+# Ensure directories exist with better error handling
+try:
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    os.makedirs(app.config['SESSION_FOLDER'], exist_ok=True)
+    print(f"Data directories created/verified:")
+    print(f"  Upload folder: {app.config['UPLOAD_FOLDER']}")
+    print(f"  Session folder: {app.config['SESSION_FOLDER']}")
+except Exception as e:
+    print(f"ERROR: Failed to create data directories: {e}")
+    print(f"  Attempted upload folder: {app.config['UPLOAD_FOLDER']}")
+    print(f"  Attempted session folder: {app.config['SESSION_FOLDER']}")
+    print(f"  Runtime base dir: {_RUNTIME_BASE_DIR}")
+    print(f"  Is frozen: {_IS_FROZEN}")
+    print(f"  Executable: {sys.executable}")
+    # Fallback to temp directory if we can't create directories in the app folder
+    import tempfile
+    fallback_dir = os.path.join(tempfile.gettempdir(), 'Alchemist')
+    app.config['UPLOAD_FOLDER'] = os.path.join(fallback_dir, 'data')
+    app.config['SESSION_FOLDER'] = os.path.join(app.config['UPLOAD_FOLDER'], 'sessions')
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    os.makedirs(app.config['SESSION_FOLDER'], exist_ok=True)
+    print(f"Fallback to temp directory: {fallback_dir}")
 
 # Global instances
 data_handler = DataHandler()
@@ -1722,17 +1802,27 @@ def internal_error(e):
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    print("Starting Alchemist - Data Cleaning Tool")
-    print(f"Max upload size: {app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)}MB")
-    print(f"Upload folder: {app.config['UPLOAD_FOLDER']}")
-    print(f"Session folder: {app.config['SESSION_FOLDER']}")
-    print(f"Server running on http://0.0.0.0:{port}")
+    try:
+        port = int(os.environ.get('PORT', 5000))
+        print("Starting Alchemist - Data Cleaning Tool")
+        print(f"Max upload size: {app.config['MAX_CONTENT_LENGTH'] // (1024 * 1024)}MB")
+        print(f"Upload folder: {app.config['UPLOAD_FOLDER']}")
+        print(f"Session folder: {app.config['SESSION_FOLDER']}")
+        print(f"Frontend directory: {_FRONTEND_DIR}")
+        print(f"Runtime base directory: {_RUNTIME_BASE_DIR}")
+        print(f"Is frozen (PyInstaller): {_IS_FROZEN}")
+        print(f"Server running on http://0.0.0.0:{port}")
 
-    open_browser = os.environ.get('ALCH_OPEN_BROWSER', '1').lower() not in {'0', 'false', 'no'}
-    is_reloader_child = os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
-    if open_browser and not is_reloader_child:
-        url = f"http://127.0.0.1:{port}"
-        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+        open_browser = os.environ.get('ALCH_OPEN_BROWSER', '1').lower() not in {'0', 'false', 'no'}
+        is_reloader_child = os.environ.get('WERKZEUG_RUN_MAIN') == 'true'
+        if open_browser and not is_reloader_child:
+            url = f"http://127.0.0.1:{port}"
+            threading.Timer(1.0, lambda: webbrowser.open(url)).start()
 
-    app.run(debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true', host='0.0.0.0', port=port)
+        app.run(debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true', host='0.0.0.0', port=port)
+    except Exception as e:
+        print(f"FATAL ERROR during startup: {e}")
+        print("Traceback:")
+        import traceback
+        traceback.print_exc()
+        input("Press Enter to exit...")  # Keep window open to see error

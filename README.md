@@ -2,9 +2,39 @@
 
 Alchemist is a web-based data cleaning and transformation tool built with a Python Flask backend and a modern JavaScript frontend. Upload, clean, transform, visualize, and export datasets from CSV, Excel, JSON, and SQLite with session management and **case-insensitive** filtering and search.
 
+## Table of Contents
+
+- [About](#about)
+  - [Live Demo](#live-demo)
+  - [Technology](#technology)
+  - [Python Libraries Used](#python-libraries-used)
+  - [Features](#features)
+- [Screenshots](#screenshots)
+- [Project Structure](#project-structure)
+- [Installation & Setup](#installation--setup)
+  - [Option 1: Windows Installer](#option-1-windows-installer-easiest-for-windows-users)
+  - [Option 2: Linux Executable Download](#option-2-linux-executable-download-easiest-for-linux-users)
+  - [Option 3: Online Demo](#option-3-use-the-online-demo)
+  - [Option 4: Run using alchemist.sh](#option-4-run-using-alchemistsh-recommended-for-developers)
+  - [Option 5: Run using alchemist.bat](#option-5-run-using-alchemistbat-windows-development)
+  - [Option 6: Install (Linux)](#option-6-install-linux)
+  - [Option 7: Manual setup](#option-7-manual-setup-create-venv-in-backend)
+- [Usage](#usage)
+  - [1. Upload data](#1-upload-data)
+  - [2. Work with the table](#2-work-with-the-table)
+  - [3. Preview operations](#3-preview-operations)
+  - [4. Apply cleaning and export](#4-apply-cleaning-and-export)
+  - [5. Use facet operations](#5-use-facet-operations)
+- [API Overview](#api-overview)
+- [Behavior Notes](#behavior-notes)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+
 ---
 
-## Live Demo
+## About
+
+### Live Demo
 
 https://alchemist-6qfo.onrender.com/
 
@@ -165,13 +195,60 @@ Alchemist/
 
 ## Installation & Setup
 
-### Option 1: Use the online demo
+### Option 1: Windows Installer (Easiest for Windows Users)
+
+**Recommended for Windows users who want a simple installation without Python setup.**
+
+1. Download the latest Windows installer from the [Releases page](https://github.com/danchege/Alchemist/releases/latest)
+2. Run the `alchemist-installer.exe` file
+3. Follow the installation wizard (default settings are recommended)
+4. Launch Alchemist from the Start menu or desktop shortcut
+
+The installer includes:
+- Complete standalone application (no Python required)
+- All dependencies bundled (pandas, numpy, matplotlib, etc.)
+- Desktop shortcut and Start menu entry
+- Automatic uninstaller
+
+After installation, Alchemist will open in your browser automatically at `http://127.0.0.1:5000`.
+
+### Option 2: Linux Executable Download (Easiest for Linux Users)
+
+**Recommended for Linux users who want a simple installation without Python setup.**
+
+1. Download the latest Linux executable from the [Releases page](https://github.com/danchege/Alchemist/releases/latest)
+2. Extract the archive:
+   ```bash
+   tar -xzf Alchemist-linux-x86_64.tar.gz
+   cd Alchemist
+   ```
+3. Run the application:
+   ```bash
+   ./Alchemist
+   ```
+
+The executable includes:
+- Complete standalone application (no Python required)
+- All dependencies bundled (pandas, numpy, matplotlib, etc.)
+- No installation required - just extract and run
+
+Useful environment variables:
+
+```bash
+# Change port
+PORT=5001 ./Alchemist
+
+# Disable browser auto-open
+ALCH_OPEN_BROWSER=0 ./Alchemist
+```
+
+### Option 3: Use the online demo
 
 Open:
 
 https://alchemist-6qfo.onrender.com/
 
-### Option 2: Run using `alchemist.sh` (recommended)
+### Option 4: Run using `alchemist.sh` (recommended for developers)
 
 From the project root:
 
@@ -196,7 +273,7 @@ To build an offline executable (PyInstaller):
 
 The executable will be in `dist/Alchemist/`.
 
-### Option 2b: Run using `alchemist.bat` (Windows)
+### Option 5: Run using `alchemist.bat` (Windows Development)
 
 From the project root in Command Prompt or PowerShell:
 
@@ -221,29 +298,7 @@ alchemist.bat build
 
 The executable will be in `dist\Alchemist.exe`.
 
-### Run the Linux executable (release build)
-
-If you downloaded a prebuilt Linux release archive (for example `Alchemist-linux-x86_64.tar.gz`), extract it and run the bundled executable:
-
-```bash
-tar -xzf Alchemist-linux-x86_64.tar.gz
-cd Alchemist
-./Alchemist
-```
-
-It will start the local server and open your browser to the correct `localhost` URL.
-
-Useful environment variables:
-
-```bash
-# Change port
-PORT=5001 ./Alchemist
-
-# Disable browser auto-open
-ALCH_OPEN_BROWSER=0 ./Alchemist
-```
-
-### Install (Linux)
+### Option 6: Install (Linux)
 
 1. Download the latest release
 
@@ -286,7 +341,7 @@ cd /opt/alchemist/Alchemist-linux-x86_64
 sudo ./uninstall.sh
 ```
 
-### Option 3: Manual setup (create venv in `backend/`)
+### Option 7: Manual setup (create venv in `backend/`)
 
 1. Go to the backend directory (all manual commands below run from here):
    ```bash
@@ -294,11 +349,22 @@ sudo ./uninstall.sh
    ```
 
 2. Create and activate a virtual environment in the `backend/` folder:
+
+   **Linux/macOS:**
    ```bash
    python -m venv .venv
-   # Linux/macOS:
    source .venv/bin/activate
-   # Windows (PowerShell):
+   ```
+
+   **Windows (Command Prompt):**
+   ```cmd
+   python -m venv .venv
+   .venv\Scripts\activate.bat
+   ```
+
+   **Windows (PowerShell):**
+   ```powershell
+   python -m venv .venv
    .venv\Scripts\Activate.ps1
    ```
 
