@@ -73,21 +73,35 @@ if exist "%BACKEND_DIR%\requirements.txt" (
     echo [WARN] requirements.txt not found in %BACKEND_DIR%. Skipping dependency install.
 )
 
-echo [3.5/4] Installing PyInstaller...
-"%PYTHON_VENV%" -m pip install pyinstaller
+echo [3.5/4] Installing PyInstaller and Pillow...
+"%PYTHON_VENV%" -m pip install pyinstaller pillow
 if errorlevel 1 (
-    echo [ERROR] Failed to install PyInstaller.
+    echo [ERROR] Failed to install PyInstaller and Pillow.
     exit /b 1
 )
 
 REM -----------------------------------------------------------------
-REM 4) Clean previous build artifacts and run PyInstaller
+REM 4) Convert PNG to ICO and clean previous build artifacts
 REM -----------------------------------------------------------------
-echo [4/4] Cleaning previous build output...
+echo [4/5] Converting icon.png to icon.ico...
+if exist "%ROOT_DIR%\icon.png" (
+    "%PYTHON_VENV%" -c "from PIL import Image; img = Image.open(r'%ROOT_DIR%\icon.png'); img.save(r'%ROOT_DIR%\icon.ico', sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)]); print('Icon converted successfully')"
+    if errorlevel 1 (
+        echo [ERROR] Failed to convert icon.png to icon.ico.
+        exit /b 1
+    )
+) else (
+    echo [WARN] icon.png not found. Using default icon.
+)
+
+echo [4.5/5] Cleaning previous build output...
 if exist "%ROOT_DIR%\dist"  rmdir /s /q "%ROOT_DIR%\dist"
 if exist "%ROOT_DIR%\build" rmdir /s /q "%ROOT_DIR%\build"
 
-echo [4/4] Building Alchemist executable with PyInstaller...
+REM -----------------------------------------------------------------
+REM 5) Run PyInstaller
+REM -----------------------------------------------------------------
+echo [5/5] Building Alchemist executable with PyInstaller...
 pushd "%ROOT_DIR%"
 REM Use the correct module name: PyInstaller (not pyinstaller)
 "%PYTHON_VENV%" -m PyInstaller --version
@@ -98,6 +112,7 @@ if errorlevel 1 (
 
 "%PYTHON_VENV%" -m PyInstaller --noconfirm --clean ^
   --name Alchemist ^
+  --icon "icon.ico" ^
   --add-data "frontend;frontend" ^
   "backend\app.py"
 set "BUILD_ERROR=%ERRORLEVEL%"
